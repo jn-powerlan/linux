@@ -73,6 +73,7 @@ struct voltagedomain {
 	struct omap_vc_channel *vc;
 	const struct omap_vfsm_instance *vfsm;
 	struct omap_vp_instance *vp;
+	struct omap_abb_instance *abb;
 	struct omap_voltdm_pmic *pmic;
 
 	/* VC/VP register access functions: SoC specific */
@@ -85,6 +86,7 @@ struct voltagedomain {
 		u32 rate;
 	} sys_clk;
 
+	unsigned long (*get_voltage) (struct voltagedomain *voltdm);
 	int (*scale) (struct voltagedomain *voltdm,
 		      unsigned long target_volt);
 

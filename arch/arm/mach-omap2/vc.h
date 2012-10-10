@@ -43,8 +43,8 @@ struct voltagedomain;
 struct omap_vc_common {
 	u32 cmd_on_mask;
 	u32 valid;
+	u32 data_mask;
 	u8 bypass_val_reg;
-	u8 data_shift;
 	u8 slaveaddr_shift;
 	u8 regaddr_shift;
 	u8 cmd_on_shift;
@@ -112,6 +112,7 @@ extern struct omap_vc_channel omap4_vc_iva;
 extern struct omap_vc_channel omap4_vc_core;
 
 void omap_vc_init_channel(struct voltagedomain *voltdm);
+unsigned long omap_vc_get_bypass_data(struct voltagedomain *voltdm);
 int omap_vc_pre_scale(struct voltagedomain *voltdm,
 		      unsigned long target_volt,
 		      u8 *target_vsel, u8 *current_vsel);
