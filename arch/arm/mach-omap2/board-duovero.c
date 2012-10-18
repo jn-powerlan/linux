@@ -169,8 +169,47 @@ static struct omap2_hsmmc_info mmc[] = {
 		.gpio_wp	= -EINVAL,
 		.gpio_cd	= -EINVAL,
 	},
+	{
+		.mmc		= 5,
+		.caps		= MMC_CAP_4_BIT_DATA | MMC_CAP_POWER_OFF_CARD,
+		.gpio_wp	= -EINVAL,
+		.gpio_cd	= -EINVAL,
+                .ocr_mask	= MMC_VDD_30_31,
+		.nonremovable	= true,
+	},
 	{}	/* Terminator */
 };
+
+static struct regulator_consumer_supply omap4_duovero_vmmc5_supply[] = {
+	REGULATOR_SUPPLY("vmmc", "omap_hsmmc.4"),
+};
+
+static struct regulator_init_data duovero_vmmc5 = {
+	.constraints = {
+		.valid_ops_mask = REGULATOR_CHANGE_STATUS,
+	},
+	.num_consumer_supplies = ARRAY_SIZE(omap4_duovero_vmmc5_supply),
+	.consumer_supplies = omap4_duovero_vmmc5_supply,
+};
+
+static struct fixed_voltage_config duovero_vwlan = {
+	.supply_name = "vwlan",
+	.microvolts = 3000000, /* 1.8V */
+	.gpio = 43,
+	.startup_delay = 7000, /* 70msec */
+	.enable_high = 1,
+	.enabled_at_boot = 1,
+	.init_data = &duovero_vmmc5,
+};
+
+static struct platform_device omap_vwlan_device = {
+	.name		= "reg-fixed-voltage",
+	.id		= 1,
+	.dev = {
+		.platform_data = &duovero_vwlan,
+	},
+};
+
 
 static struct twl6040_codec_data twl6040_codec = {
 	/* single-step ramp for headset and handsfree */
@@ -210,6 +249,34 @@ static int __init duovero_i2c_init(void)
 	omap_register_i2c_bus(4, 400, NULL, 0);
 	return 0;
 }
+
+#ifdef CONFIG_OMAP_MUX
+static struct omap_board_mux board_mux[] __initdata = {
+	/* WLAN IRQ - GPIO 53 */
+	OMAP4_MUX(GPMC_NCS3, OMAP_MUX_MODE3 | OMAP_PIN_INPUT),
+	/* WLAN POWER ENABLE - GPIO 43 */
+	OMAP4_MUX(GPMC_A19, OMAP_MUX_MODE3 | OMAP_PIN_OUTPUT),
+	/* WLAN SDIO: MMC5 CMD */
+	OMAP4_MUX(SDMMC5_CMD, OMAP_MUX_MODE0 | OMAP_PIN_INPUT_PULLUP),
+	/* WLAN SDIO: MMC5 CLK */
+	OMAP4_MUX(SDMMC5_CLK, OMAP_MUX_MODE0 | OMAP_PIN_INPUT_PULLUP),
+	/* WLAN SDIO: MMC5 DAT[0-3] */
+	OMAP4_MUX(SDMMC5_DAT0, OMAP_MUX_MODE0 | OMAP_PIN_INPUT_PULLUP),
+	OMAP4_MUX(SDMMC5_DAT1, OMAP_MUX_MODE0 | OMAP_PIN_INPUT_PULLUP),
+	OMAP4_MUX(SDMMC5_DAT2, OMAP_MUX_MODE0 | OMAP_PIN_INPUT_PULLUP),
+	OMAP4_MUX(SDMMC5_DAT3, OMAP_MUX_MODE0 | OMAP_PIN_INPUT_PULLUP),
+	/* User GPIOs */
+	OMAP4_MUX(ABE_DMIC_DIN2, OMAP_MUX_MODE3 | OMAP_PIN_OUTPUT),
+	OMAP4_MUX(ABE_DMIC_DIN3, OMAP_MUX_MODE3 | OMAP_PIN_OUTPUT),
+	/* NIRQ2 for twl6040 */
+	OMAP4_MUX(SYS_NIRQ2, OMAP_MUX_MODE0 |
+		  OMAP_PIN_INPUT_PULLUP | OMAP_PIN_OFF_WAKEUPENABLE),
+	{ .reg_offset = OMAP_MUX_TERMINATOR },
+};
+
+#else
+#define board_mux	NULL
+#endif
 
 static struct gpio duovero_hdmi_gpios[] = {
 	{ HDMI_GPIO_LS_OE, GPIOF_OUT_INIT_HIGH, "hdmi_gpio_ls_oe" },
@@ -290,12 +357,13 @@ static struct platform_device duovero_hdmi_audio_codec = {
 static struct platform_device *duovero_devices[] __initdata = {
 	&duovero_hdmi_audio_codec,
 	&duovero_abe_audio,
+        &omap_vwlan_device,
 };
 
 static void __init duovero_init(void)
 {
 	int package = OMAP_PACKAGE_CBS;
-	omap4_mux_init(NULL, NULL, package);
+	omap4_mux_init(board_mux, NULL, package);
 
 	duovero_i2c_init();
 	platform_add_devices(duovero_devices, ARRAY_SIZE(duovero_devices));
