@@ -1174,53 +1174,76 @@ static int cluster_changed(struct v4l2_ctrl *master)
 	return diff;
 }
 
-/* Validate a new control */
-static int validate_new(const struct v4l2_ctrl *ctrl,
-			struct v4l2_ext_control *c)
+/* Validate integer-type control */
+static int validate_new_int(const struct v4l2_ctrl *ctrl, s32 *pval)
 {
-	size_t len;
+	s32 val = *pval;
 	u32 offset;
-	s32 val;
 
 	switch (ctrl->type) {
 	case V4L2_CTRL_TYPE_INTEGER:
 		/* Round towards the closest legal value */
-		val = c->value + ctrl->step / 2;
-		val = clamp(val, ctrl->minimum, ctrl->maximum);
+		val += ctrl->step / 2;
+		if (val < ctrl->minimum)
+			val = ctrl->minimum;
+		if (val > ctrl->maximum)
+			val = ctrl->maximum;
 		offset = val - ctrl->minimum;
 		offset = ctrl->step * (offset / ctrl->step);
-		c->value = ctrl->minimum + offset;
+		val = ctrl->minimum + offset;
+		*pval = val;
 		return 0;
 
 	case V4L2_CTRL_TYPE_BOOLEAN:
-		c->value = !!c->value;
+		*pval = !!val;
 		return 0;
 
 	case V4L2_CTRL_TYPE_MENU:
 	case V4L2_CTRL_TYPE_INTEGER_MENU:
-		if (c->value < ctrl->minimum || c->value > ctrl->maximum)
+		if (val < ctrl->minimum || val > ctrl->maximum)
 			return -ERANGE;
-		if (ctrl->menu_skip_mask & (1 << c->value))
+		if (ctrl->menu_skip_mask & (1 << val))
 			return -EINVAL;
 		if (ctrl->type == V4L2_CTRL_TYPE_MENU &&
-		    ctrl->qmenu[c->value][0] == '\0')
+		    ctrl->qmenu[val][0] == '\0')
 			return -EINVAL;
 		return 0;
 
 	case V4L2_CTRL_TYPE_BITMASK:
-		c->value &= ctrl->maximum;
+		*pval &= ctrl->maximum;
 		return 0;
 
 	case V4L2_CTRL_TYPE_BUTTON:
 	case V4L2_CTRL_TYPE_CTRL_CLASS:
-		c->value = 0;
+		*pval = 0;
 		return 0;
+
+	default:
+		return -EINVAL;
+	}
+}
+
+/* Validate a new control */
+static int validate_new(const struct v4l2_ctrl *ctrl, struct v4l2_ext_control *c)
+{
+	char *s = c->string;
+	size_t len;
+
+	switch (ctrl->type) {
+	case V4L2_CTRL_TYPE_INTEGER:
+	case V4L2_CTRL_TYPE_BOOLEAN:
+	case V4L2_CTRL_TYPE_MENU:
+	case V4L2_CTRL_TYPE_INTEGER_MENU:
+	case V4L2_CTRL_TYPE_BITMASK:
+	case V4L2_CTRL_TYPE_BUTTON:
+	case V4L2_CTRL_TYPE_CTRL_CLASS:
+		return validate_new_int(ctrl, &c->value);
 
 	case V4L2_CTRL_TYPE_INTEGER64:
 		return 0;
 
 	case V4L2_CTRL_TYPE_STRING:
-		len = strlen(c->string);
+		len = strlen(s);
 		if (len < ctrl->minimum)
 			return -ERANGE;
 		if ((len - ctrl->minimum) % ctrl->step)
@@ -2212,18 +2235,11 @@ int v4l2_subdev_g_ext_ctrls(struct v4l2_subdev *sd, struct v4l2_ext_controls *cs
 EXPORT_SYMBOL(v4l2_subdev_g_ext_ctrls);
 
 /* Helper function to get a single control */
-static int get_ctrl(struct v4l2_ctrl *ctrl, struct v4l2_ext_control *c)
+static int get_ctrl(struct v4l2_ctrl *ctrl, s32 *val)
 {
 	struct v4l2_ctrl *master = ctrl->cluster[0];
 	int ret = 0;
 	int i;
-
-	/* String controls are not supported. The new_to_user() and
-	 * cur_to_user() calls below would need to be modified not to access
-	 * userspace memory when called from get_ctrl().
-	 */
-	if (ctrl->type == V4L2_CTRL_TYPE_STRING)
-		return -EINVAL;
 
 	if (ctrl->flags & V4L2_CTRL_FLAG_WRITE_ONLY)
 		return -EACCES;
@@ -2234,9 +2250,9 @@ static int get_ctrl(struct v4l2_ctrl *ctrl, struct v4l2_ext_control *c)
 		for (i = 0; i < master->ncontrols; i++)
 			cur_to_new(master->cluster[i]);
 		ret = call_op(master, g_volatile_ctrl);
-		new_to_user(c, ctrl);
+		*val = ctrl->val;
 	} else {
-		cur_to_user(c, ctrl);
+		*val = ctrl->cur.val;
 	}
 	v4l2_ctrl_unlock(master);
 	return ret;
@@ -2245,14 +2261,10 @@ static int get_ctrl(struct v4l2_ctrl *ctrl, struct v4l2_ext_control *c)
 int v4l2_g_ctrl(struct v4l2_ctrl_handler *hdl, struct v4l2_control *control)
 {
 	struct v4l2_ctrl *ctrl = v4l2_ctrl_find(hdl, control->id);
-	struct v4l2_ext_control c;
-	int ret;
 
 	if (ctrl == NULL || !type_is_int(ctrl))
 		return -EINVAL;
-	ret = get_ctrl(ctrl, &c);
-	control->value = c.value;
-	return ret;
+	return get_ctrl(ctrl, &control->value);
 }
 EXPORT_SYMBOL(v4l2_g_ctrl);
 
@@ -2264,27 +2276,14 @@ EXPORT_SYMBOL(v4l2_subdev_g_ctrl);
 
 s32 v4l2_ctrl_g_ctrl(struct v4l2_ctrl *ctrl)
 {
-	struct v4l2_ext_control c;
+	s32 val = 0;
 
 	/* It's a driver bug if this happens. */
 	WARN_ON(!type_is_int(ctrl));
-	c.value = 0;
-	get_ctrl(ctrl, &c);
-	return c.value;
+	get_ctrl(ctrl, &val);
+	return val;
 }
 EXPORT_SYMBOL(v4l2_ctrl_g_ctrl);
-
-s64 v4l2_ctrl_g_ctrl_int64(struct v4l2_ctrl *ctrl)
-{
-	struct v4l2_ext_control c;
-
-	/* It's a driver bug if this happens. */
-	WARN_ON(ctrl->type != V4L2_CTRL_TYPE_INTEGER64);
-	c.value = 0;
-	get_ctrl(ctrl, &c);
-	return c.value;
-}
-EXPORT_SYMBOL(v4l2_ctrl_g_ctrl_int64);
 
 
 /* Core function that calls try/s_ctrl and ensures that the new value is
@@ -2501,21 +2500,13 @@ int v4l2_subdev_s_ext_ctrls(struct v4l2_subdev *sd, struct v4l2_ext_controls *cs
 EXPORT_SYMBOL(v4l2_subdev_s_ext_ctrls);
 
 /* Helper function for VIDIOC_S_CTRL compatibility */
-static int set_ctrl(struct v4l2_fh *fh, struct v4l2_ctrl *ctrl,
-		    struct v4l2_ext_control *c)
+static int set_ctrl(struct v4l2_fh *fh, struct v4l2_ctrl *ctrl, s32 *val)
 {
 	struct v4l2_ctrl *master = ctrl->cluster[0];
 	int ret;
 	int i;
 
-	/* String controls are not supported. The user_to_new() and
-	 * cur_to_user() calls below would need to be modified not to access
-	 * userspace memory when called from set_ctrl().
-	 */
-	if (ctrl->type == V4L2_CTRL_TYPE_STRING)
-		return -EINVAL;
-
-	ret = validate_new(ctrl, c);
+	ret = validate_new_int(ctrl, val);
 	if (ret)
 		return ret;
 
@@ -2530,13 +2521,12 @@ static int set_ctrl(struct v4l2_fh *fh, struct v4l2_ctrl *ctrl,
 	   manual mode we have to update the current volatile values since
 	   those will become the initial manual values after such a switch. */
 	if (master->is_auto && master->has_volatiles && ctrl == master &&
-	    !is_cur_manual(master) && c->value == master->manual_mode_value)
+	    !is_cur_manual(master) && *val == master->manual_mode_value)
 		update_from_auto_cluster(master);
-
-	user_to_new(c, ctrl);
+	ctrl->val = *val;
+	ctrl->is_new = 1;
 	ret = try_or_set_cluster(fh, master, true);
-	cur_to_user(c, ctrl);
-
+	*val = ctrl->cur.val;
 	v4l2_ctrl_unlock(ctrl);
 	return ret;
 }
@@ -2545,8 +2535,6 @@ int v4l2_s_ctrl(struct v4l2_fh *fh, struct v4l2_ctrl_handler *hdl,
 					struct v4l2_control *control)
 {
 	struct v4l2_ctrl *ctrl = v4l2_ctrl_find(hdl, control->id);
-	struct v4l2_ext_control c;
-	int ret;
 
 	if (ctrl == NULL || !type_is_int(ctrl))
 		return -EINVAL;
@@ -2554,10 +2542,7 @@ int v4l2_s_ctrl(struct v4l2_fh *fh, struct v4l2_ctrl_handler *hdl,
 	if (ctrl->flags & V4L2_CTRL_FLAG_READ_ONLY)
 		return -EACCES;
 
-	c.value = control->value;
-	ret = set_ctrl(fh, ctrl, &c);
-	control->value = c.value;
-	return ret;
+	return set_ctrl(fh, ctrl, &control->value);
 }
 EXPORT_SYMBOL(v4l2_s_ctrl);
 
@@ -2569,25 +2554,11 @@ EXPORT_SYMBOL(v4l2_subdev_s_ctrl);
 
 int v4l2_ctrl_s_ctrl(struct v4l2_ctrl *ctrl, s32 val)
 {
-	struct v4l2_ext_control c;
-
 	/* It's a driver bug if this happens. */
 	WARN_ON(!type_is_int(ctrl));
-	c.value = val;
-	return set_ctrl(NULL, ctrl, &c);
+	return set_ctrl(NULL, ctrl, &val);
 }
 EXPORT_SYMBOL(v4l2_ctrl_s_ctrl);
-
-int v4l2_ctrl_s_ctrl_int64(struct v4l2_ctrl *ctrl, s64 val)
-{
-	struct v4l2_ext_control c;
-
-	/* It's a driver bug if this happens. */
-	WARN_ON(ctrl->type != V4L2_CTRL_TYPE_INTEGER64);
-	c.value64 = val;
-	return set_ctrl(NULL, ctrl, &c);
-}
-EXPORT_SYMBOL(v4l2_ctrl_s_ctrl_int64);
 
 static int v4l2_ctrl_add_event(struct v4l2_subscribed_event *sev, unsigned elems)
 {
