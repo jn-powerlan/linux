@@ -517,21 +517,41 @@ void ieee80211_tx_status(struct ieee80211_hw *hw, struct sk_buff *skb)
 
 	if (info->flags & IEEE80211_TX_INTFL_NL80211_FRAME_TX) {
 		u64 cookie = (unsigned long)skb;
+		bool found = false;
+
 		acked = info->flags & IEEE80211_TX_STAT_ACK;
 
-		/*
-		 * TODO: When we have non-netdev frame TX,
-		 * we cannot use skb->dev->ieee80211_ptr
-		 */
+		rcu_read_lock();
 
-		if (ieee80211_is_nullfunc(hdr->frame_control) ||
-		    ieee80211_is_qos_nullfunc(hdr->frame_control))
-			cfg80211_probe_status(skb->dev, hdr->addr1,
+		list_for_each_entry_rcu(sdata, &local->interfaces, list) {
+			if (!sdata->dev)
+				continue;
+
+			if (skb->dev != sdata->dev)
+				continue;
+
+			found = true;
+			break;
+		}
+
+		if (!skb->dev) {
+			sdata = rcu_dereference(local->p2p_sdata);
+			if (sdata)
+				found = true;
+		}
+
+		if (!found)
+			skb->dev = NULL;
+		else if (ieee80211_is_nullfunc(hdr->frame_control) ||
+			 ieee80211_is_qos_nullfunc(hdr->frame_control)) {
+			cfg80211_probe_status(sdata->dev, hdr->addr1,
 					      cookie, acked, GFP_ATOMIC);
-		else
-			cfg80211_mgmt_tx_status(
-				skb->dev->ieee80211_ptr, cookie, skb->data,
-				skb->len, acked, GFP_ATOMIC);
+		} else {
+			cfg80211_mgmt_tx_status(&sdata->wdev, cookie, skb->data,
+						skb->len, acked, GFP_ATOMIC);
+		}
+
+		rcu_read_unlock();
 	}
 
 	if (unlikely(info->ack_frame_id)) {
@@ -648,3 +668,12 @@ void ieee80211_free_txskb(struct ieee80211_hw *hw, struct sk_buff *skb)
 	dev_kfree_skb_any(skb);
 }
 EXPORT_SYMBOL(ieee80211_free_txskb);
+
+void ieee80211_purge_tx_queue(struct ieee80211_hw *hw,
+			      struct sk_buff_head *skbs)
+{
+	struct sk_buff *skb;
+
+	while ((skb = __skb_dequeue(skbs)))
+		ieee80211_free_txskb(hw, skb);
+}
