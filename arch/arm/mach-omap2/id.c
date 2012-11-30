@@ -22,10 +22,10 @@
 #include <asm/cputype.h>
 
 #include "common.h"
-#include <plat/cpu.h>
 
-#include <mach/id.h>
+#include "id.h"
 
+#include "soc.h"
 #include "control.h"
 
 static unsigned int omap_revision;
@@ -161,9 +161,8 @@ void __init omap2xxx_check_revision(void)
 	}
 
 	if (j == ARRAY_SIZE(omap_ids)) {
-		printk(KERN_ERR "Unknown OMAP device type. "
-				"Handling it as OMAP%04x\n",
-				omap_ids[i].type >> 16);
+		pr_err("Unknown OMAP device type. Handling it as OMAP%04x\n",
+		       omap_ids[i].type >> 16);
 		j = i;
 	}
 
@@ -218,7 +217,6 @@ static void __init omap3_cpuinfo(void)
 	OMAP3_SHOW_FEATURE(neon);
 	OMAP3_SHOW_FEATURE(isp);
 	OMAP3_SHOW_FEATURE(192mhz_clk);
-	OMAP3_SHOW_FEATURE(720mhz);
 
 	printk(")\n");
 }
@@ -268,14 +266,6 @@ void __init omap3xxx_check_features(void)
 	 *       e.g. Size of L2 cache.
 	 */
 
-	/*
-	 * Does it support 720MHz?
-	 */
-	status = (OMAP3_SKUID_MASK & read_tap_reg(OMAP3_PRODID));
-
-	if (status & OMAP3_SKUID_720MHZ) {
-		omap_features |= OMAP3_HAS_720MHZ;
-	}
 	omap3_cpuinfo();
 }
 

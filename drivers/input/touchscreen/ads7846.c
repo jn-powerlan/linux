@@ -955,7 +955,8 @@ static int ads7846_resume(struct device *dev)
 
 static SIMPLE_DEV_PM_OPS(ads7846_pm, ads7846_suspend, ads7846_resume);
 
-static int __devinit ads7846_setup_pendown(struct spi_device *spi, struct ads7846 *ts)
+static int __devinit ads7846_setup_pendown(struct spi_device *spi,
+					   struct ads7846 *ts)
 {
 	struct ads7846_platform_data *pdata = spi->dev.platform_data;
 	int err;
@@ -981,6 +982,9 @@ static int __devinit ads7846_setup_pendown(struct spi_device *spi, struct ads784
 
 		ts->gpio_pendown = pdata->gpio_pendown;
 
+		if (pdata->gpio_pendown_debounce)
+			gpio_set_debounce(pdata->gpio_pendown,
+					  pdata->gpio_pendown_debounce);
 	} else {
 		dev_err(&spi->dev, "no get_pendown_state nor gpio_pendown?\n");
 		return -EINVAL;
@@ -1347,16 +1351,9 @@ static int __devinit ads7846_probe(struct spi_device *spi)
 	 * the touchscreen, in case it's not connected.
 	 */
 	if (ts->model == 7845)
-		err = ads7845_read12_ser(&spi->dev, PWRDOWN);
+		ads7845_read12_ser(&spi->dev, PWRDOWN);
 	else
-		err = ads7846_read12_ser(&spi->dev, READ_12BIT_SER(vaux));
-
-	/* if sample is all 0's or all 1's then there is no device on spi */
-	if ( (err == 0x000) || (err == 0xfff)) {
-		dev_info(&spi->dev, "no device detected, test read result was 0x%08X\n", err);
-		err = -ENODEV;
-		goto err_free_irq;
-	}
+		(void) ads7846_read12_ser(&spi->dev, READ_12BIT_SER(vaux));
 
 	err = sysfs_create_group(&spi->dev.kobj, &ads784x_attr_group);
 	if (err)
@@ -1381,7 +1378,7 @@ static int __devinit ads7846_probe(struct spi_device *spi)
  err_put_regulator:
 	regulator_put(ts->reg);
  err_free_gpio:
-	if (!ts->get_pendown_state && ts->gpio_pendown != -1)
+	if (!ts->get_pendown_state)
 		gpio_free(ts->gpio_pendown);
  err_cleanup_filter:
 	if (ts->filter_cleanup)

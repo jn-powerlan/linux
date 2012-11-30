@@ -2110,7 +2110,7 @@ static void __devinit smsc911x_read_mac_address(struct net_device *dev)
 static int __devinit smsc911x_init(struct net_device *dev)
 {
 	struct smsc911x_data *pdata = netdev_priv(dev);
-	unsigned int byte_test;
+	unsigned int byte_test, mask;
 	unsigned int to = 100;
 
 	SMSC_TRACE(pdata, probe, "Driver Parameters:");
@@ -2130,9 +2130,22 @@ static int __devinit smsc911x_init(struct net_device *dev)
 	/*
 	 * poll the READY bit in PMT_CTRL. Any other access to the device is
 	 * forbidden while this bit isn't set. Try for 100ms
+	 *
+	 * Note that this test is done before the WORD_SWAP register is
+	 * programmed. So in some configurations the READY bit is at 16 before
+	 * WORD_SWAP is written to. This issue is worked around by waiting
+	 * until either bit 0 or bit 16 gets set in PMT_CTRL.
+	 *
+	 * SMSC has confirmed that checking bit 16 (marked as reserved in
+	 * the datasheet) is fine since these bits "will either never be set
+	 * or can only go high after READY does (so also indicate the device
+	 * is ready)".
 	 */
-	while (!(smsc911x_reg_read(pdata, PMT_CTRL) & PMT_CTRL_READY_) && --to)
+
+	mask = PMT_CTRL_READY_ | swahw32(PMT_CTRL_READY_);
+	while (!(smsc911x_reg_read(pdata, PMT_CTRL) & mask) && --to)
 		udelay(1000);
+
 	if (to == 0) {
 		pr_err("Device not READY in 100ms aborting\n");
 		return -ENODEV;
@@ -2425,10 +2438,8 @@ static int __devinit smsc911x_drv_probe(struct platform_device *pdev)
 		pdata->ops = &shifted_smsc911x_ops;
 
 	retval = smsc911x_init(dev);
-	if (retval < 0) {
-		retval = -ENODEV;
+	if (retval < 0)
 		goto out_disable_resources;
-	}
 
 	/* configure irq polarity and type before connecting isr */
 	if (pdata->config.irq_polarity == SMSC911X_IRQ_POLARITY_ACTIVE_HIGH)

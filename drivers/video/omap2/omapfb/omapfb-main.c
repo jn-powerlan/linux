@@ -31,6 +31,7 @@
 #include <linux/omapfb.h>
 
 #include <video/omapdss.h>
+#include <plat/cpu.h>
 #include <plat/vram.h>
 #include <plat/vrfb.h>
 
@@ -1127,7 +1128,7 @@ static int omapfb_mmap(struct fb_info *fbi, struct vm_area_struct *vma)
 	DBG("user mmap region start %lx, len %d, off %lx\n", start, len, off);
 
 	vma->vm_pgoff = off >> PAGE_SHIFT;
-	vma->vm_flags |= VM_IO | VM_RESERVED;
+	/* VM_IO | VM_DONTEXPAND | VM_DONTDUMP are set by remap_pfn_range() */
 	vma->vm_page_prot = pgprot_writecombine(vma->vm_page_prot);
 	vma->vm_ops = &mmap_user_ops;
 	vma->vm_private_data = rg;
@@ -1592,6 +1593,20 @@ static int omapfb_allocate_all_fbs(struct omapfb2_device *fbdev)
 	return 0;
 }
 
+static void omapfb_clear_fb(struct fb_info *fbi)
+{
+	const struct fb_fillrect rect = {
+		.dx = 0,
+		.dy = 0,
+		.width = fbi->var.xres_virtual,
+		.height = fbi->var.yres_virtual,
+		.color = 0,
+		.rop = ROP_COPY,
+	};
+
+	cfb_fillrect(fbi, &rect);
+}
+
 int omapfb_realloc_fbmem(struct fb_info *fbi, unsigned long size, int type)
 {
 	struct omapfb_info *ofbi = FB2OFB(fbi);
@@ -1660,6 +1675,8 @@ int omapfb_realloc_fbmem(struct fb_info *fbi, unsigned long size, int type)
 		if (r)
 			goto err;
 	}
+
+	omapfb_clear_fb(fbi);
 
 	return 0;
 err:
@@ -1945,6 +1962,16 @@ static int omapfb_create_framebuffers(struct omapfb2_device *fbdev)
 		}
 	}
 
+	for (i = 0; i < fbdev->num_fbs; i++) {
+		struct fb_info *fbi = fbdev->fbs[i];
+		struct omapfb_info *ofbi = FB2OFB(fbi);
+
+		if (ofbi->region->size == 0)
+			continue;
+
+		omapfb_clear_fb(fbi);
+	}
+
 	DBG("fb_infos initialized\n");
 
 	for (i = 0; i < fbdev->num_fbs; i++) {
@@ -2006,15 +2033,7 @@ static int omapfb_mode_to_timings(const char *mode_str,
 	int r;
 
 #ifdef CONFIG_OMAP2_DSS_VENC
-	if (strcmp(mode_str, "pal-16") == 0) {
-		*timings = omap_dss_pal_timings;
-		*bpp = 16;
-		return 0;
-	} else if (strcmp(mode_str, "ntsc-16") == 0) {
-		*timings = omap_dss_ntsc_timings;
-		*bpp = 16;
-		return 0;
-	} else if (strcmp(mode_str, "pal") == 0) {
+	if (strcmp(mode_str, "pal") == 0) {
 		*timings = omap_dss_pal_timings;
 		*bpp = 24;
 		return 0;
@@ -2361,6 +2380,7 @@ static int __init omapfb_probe(struct platform_device *pdev)
 	struct omap_overlay *ovl;
 	struct omap_dss_device *def_display;
 	struct omap_dss_device *dssdev;
+	struct omap_dss_device *ovl_device;
 
 	DBG("omapfb_probe\n");
 
@@ -2434,8 +2454,9 @@ static int __init omapfb_probe(struct platform_device *pdev)
 	/* gfx overlay should be the default one. find a display
 	 * connected to that, and use it as default display */
 	ovl = omap_dss_get_overlay(0);
-	if (ovl->manager && ovl->manager->device) {
-		def_display = ovl->manager->device;
+	ovl_device = ovl->get_device(ovl);
+	if (ovl_device) {
+		def_display = ovl_device;
 	} else {
 		dev_warn(&pdev->dev, "cannot find default display\n");
 		def_display = NULL;
