@@ -3,7 +3,8 @@
 #
 
 menuconfig C2PORT
-	tristate "Silicon Labs C2 port support"
+	tristate "Silicon Labs C2 port support (EXPERIMENTAL)"
+	depends on EXPERIMENTAL
 	default n
 	help
 	  This option enables support for Silicon Labs C2 port used to
@@ -21,7 +22,7 @@ menuconfig C2PORT
 if C2PORT
 
 config C2PORT_DURAMAR_2150
-	tristate "C2 port support for Eurotech's Duramar 2150"
+	tristate "C2 port support for Eurotech's Duramar 2150 (EXPERIMENTAL)"
 	depends on X86
 	default n
 	help

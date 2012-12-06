@@ -13,6 +13,7 @@
 #include <linux/irq.h>
 #include <linux/of_irq.h>
 #include <linux/of_platform.h>
+#include <linux/pinctrl/machine.h>
 #include <asm/mach/arch.h>
 #include <asm/mach/time.h>
 #include <mach/common.h>
@@ -43,8 +44,27 @@ static const struct of_dev_auxdata imx51_auxdata_lookup[] __initconst = {
 	{ /* sentinel */ }
 };
 
+static const struct of_device_id imx51_iomuxc_of_match[] __initconst = {
+	{ .compatible = "fsl,imx51-iomuxc-babbage", .data = imx51_babbage_common_init, },
+	{ /* sentinel */ }
+};
+
 static void __init imx51_dt_init(void)
 {
+	struct device_node *node;
+	const struct of_device_id *of_id;
+	void (*func)(void);
+
+	pinctrl_provide_dummies();
+
+	node = of_find_matching_node(NULL, imx51_iomuxc_of_match);
+	if (node) {
+		of_id = of_match_node(imx51_iomuxc_of_match, node);
+		func = of_id->data;
+		func();
+		of_node_put(node);
+	}
+
 	of_platform_populate(NULL, of_default_bus_match_table,
 			     imx51_auxdata_lookup, NULL);
 }
@@ -59,6 +79,7 @@ static struct sys_timer imx51_timer = {
 };
 
 static const char *imx51_dt_board_compat[] __initdata = {
+	"fsl,imx51-babbage",
 	"fsl,imx51",
 	NULL
 };

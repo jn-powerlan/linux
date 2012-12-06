@@ -36,10 +36,11 @@ void __init prom_init(void)
 
 void prom_putchar(unsigned char c)
 {
-	if (alchemy_get_cputype() == ALCHEMY_CPU_AU1300)
-		alchemy_uart_putchar(AU1300_UART2_PHYS_ADDR, c);
-	else
-		alchemy_uart_putchar(AU1000_UART0_PHYS_ADDR, c);
+#ifdef CONFIG_MIPS_DB1300
+	alchemy_uart_putchar(AU1300_UART2_PHYS_ADDR, c);
+#else
+	alchemy_uart_putchar(AU1000_UART0_PHYS_ADDR, c);
+#endif
 }
 
 

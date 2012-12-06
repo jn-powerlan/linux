@@ -448,7 +448,7 @@ static void mn_release(struct mmu_notifier *mn,
 	spin_unlock(&priv->lock);
 }
 
-static struct mmu_notifier_ops gntdev_mmu_ops = {
+struct mmu_notifier_ops gntdev_mmu_ops = {
 	.release                = mn_release,
 	.invalidate_page        = mn_invl_page,
 	.invalidate_range_start = mn_invl_range_start,
@@ -722,7 +722,7 @@ static int gntdev_mmap(struct file *flip, struct vm_area_struct *vma)
 
 	vma->vm_ops = &gntdev_vmops;
 
-	vma->vm_flags |= VM_DONTEXPAND | VM_DONTDUMP;
+	vma->vm_flags |= VM_RESERVED|VM_DONTEXPAND;
 
 	if (use_ptemod)
 		vma->vm_flags |= VM_DONTCOPY;

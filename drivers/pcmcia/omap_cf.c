@@ -24,7 +24,7 @@
 #include <asm/io.h>
 #include <asm/sizes.h>
 
-#include <mach/mux.h>
+#include <plat/mux.h>
 #include <plat/tc.h>
 
 

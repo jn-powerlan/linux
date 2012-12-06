@@ -56,14 +56,10 @@ unused.
 
 #include "../comedidev.h"
 
-#include "comedi_fc.h"
 #include "8255.h"
 #include "plx9052.h"
 
 #define PC236_DRIVER_NAME	"amplc_pc236"
-
-#define DO_ISA	IS_ENABLED(CONFIG_COMEDI_AMPLC_PC236_ISA)
-#define DO_PCI	IS_ENABLED(CONFIG_COMEDI_AMPLC_PC236_PCI)
 
 /* PCI236 PCI configuration register information */
 #define PCI_VENDOR_ID_AMPLICON 0x14dc
@@ -107,14 +103,14 @@ struct pc236_board {
 	enum pc236_model model;
 };
 static const struct pc236_board pc236_boards[] = {
-#if DO_ISA
+#if IS_ENABLED(CONFIG_COMEDI_AMPLC_PC236_ISA)
 	{
 		.name = "pc36at",
 		.bustype = isa_bustype,
 		.model = pc36at_model,
 	},
 #endif
-#if DO_PCI
+#if IS_ENABLED(CONFIG_COMEDI_AMPLC_PC236_PCI)
 	{
 		.name = "pci236",
 		.devid = PCI_DEVICE_ID_AMPLICON_PCI236,
@@ -139,18 +135,6 @@ struct pc236_private {
 	int enable_irq;
 };
 
-/* test if ISA supported and this is an ISA board */
-static inline bool is_isa_board(const struct pc236_board *board)
-{
-	return DO_ISA && board->bustype == isa_bustype;
-}
-
-/* test if PCI supported and this is a PCI board */
-static inline bool is_pci_board(const struct pc236_board *board)
-{
-	return DO_PCI && board->bustype == pci_bustype;
-}
-
 /*
  * This function looks for a board matching the supplied PCI device.
  */
@@ -159,7 +143,7 @@ static const struct pc236_board *pc236_find_pci_board(struct pci_dev *pci_dev)
 	unsigned int i;
 
 	for (i = 0; i < ARRAY_SIZE(pc236_boards); i++)
-		if (is_pci_board(&pc236_boards[i]) &&
+		if (pc236_boards[i].bustype == pci_bustype &&
 		    pci_dev->device == pc236_boards[i].devid)
 			return &pc236_boards[i];
 	return NULL;
@@ -230,13 +214,12 @@ static int pc236_request_region(struct comedi_device *dev, unsigned long from,
  */
 static void pc236_intr_disable(struct comedi_device *dev)
 {
-	const struct pc236_board *thisboard = comedi_board(dev);
 	struct pc236_private *devpriv = dev->private;
 	unsigned long flags;
 
 	spin_lock_irqsave(&dev->spinlock, flags);
 	devpriv->enable_irq = 0;
-	if (is_pci_board(thisboard))
+	if (IS_ENABLED(CONFIG_COMEDI_AMPLC_PC236_PCI) && devpriv->lcr_iobase)
 		outl(PCI236_INTR_DISABLE, devpriv->lcr_iobase + PLX9052_INTCSR);
 	spin_unlock_irqrestore(&dev->spinlock, flags);
 }
@@ -248,13 +231,12 @@ static void pc236_intr_disable(struct comedi_device *dev)
  */
 static void pc236_intr_enable(struct comedi_device *dev)
 {
-	const struct pc236_board *thisboard = comedi_board(dev);
 	struct pc236_private *devpriv = dev->private;
 	unsigned long flags;
 
 	spin_lock_irqsave(&dev->spinlock, flags);
 	devpriv->enable_irq = 1;
-	if (is_pci_board(thisboard))
+	if (IS_ENABLED(CONFIG_COMEDI_AMPLC_PC236_PCI) && devpriv->lcr_iobase)
 		outl(PCI236_INTR_ENABLE, devpriv->lcr_iobase + PLX9052_INTCSR);
 	spin_unlock_irqrestore(&dev->spinlock, flags);
 }
@@ -268,7 +250,6 @@ static void pc236_intr_enable(struct comedi_device *dev)
  */
 static int pc236_intr_check(struct comedi_device *dev)
 {
-	const struct pc236_board *thisboard = comedi_board(dev);
 	struct pc236_private *devpriv = dev->private;
 	int retval = 0;
 	unsigned long flags;
@@ -276,7 +257,8 @@ static int pc236_intr_check(struct comedi_device *dev)
 	spin_lock_irqsave(&dev->spinlock, flags);
 	if (devpriv->enable_irq) {
 		retval = 1;
-		if (is_pci_board(thisboard)) {
+		if (IS_ENABLED(CONFIG_COMEDI_AMPLC_PC236_PCI) &&
+		    devpriv->lcr_iobase) {
 			if ((inl(devpriv->lcr_iobase + PLX9052_INTCSR)
 			     & PLX9052_INTCSR_LI1STAT_MASK)
 			    == PLX9052_INTCSR_LI1STAT_INACTIVE) {
@@ -314,20 +296,39 @@ static int pc236_intr_cmdtest(struct comedi_device *dev,
 			      struct comedi_cmd *cmd)
 {
 	int err = 0;
+	int tmp;
 
-	/* Step 1 : check if triggers are trivially valid */
+	/* step 1 */
 
-	err |= cfc_check_trigger_src(&cmd->start_src, TRIG_NOW);
-	err |= cfc_check_trigger_src(&cmd->scan_begin_src, TRIG_EXT);
-	err |= cfc_check_trigger_src(&cmd->convert_src, TRIG_FOLLOW);
-	err |= cfc_check_trigger_src(&cmd->scan_end_src, TRIG_COUNT);
-	err |= cfc_check_trigger_src(&cmd->stop_src, TRIG_NONE);
+	tmp = cmd->start_src;
+	cmd->start_src &= TRIG_NOW;
+	if (!cmd->start_src || tmp != cmd->start_src)
+		err++;
+
+	tmp = cmd->scan_begin_src;
+	cmd->scan_begin_src &= TRIG_EXT;
+	if (!cmd->scan_begin_src || tmp != cmd->scan_begin_src)
+		err++;
+
+	tmp = cmd->convert_src;
+	cmd->convert_src &= TRIG_FOLLOW;
+	if (!cmd->convert_src || tmp != cmd->convert_src)
+		err++;
+
+	tmp = cmd->scan_end_src;
+	cmd->scan_end_src &= TRIG_COUNT;
+	if (!cmd->scan_end_src || tmp != cmd->scan_end_src)
+		err++;
+
+	tmp = cmd->stop_src;
+	cmd->stop_src &= TRIG_NONE;
+	if (!cmd->stop_src || tmp != cmd->stop_src)
+		err++;
 
 	if (err)
 		return 1;
 
-	/* Step 2a : make sure trigger sources are unique */
-	/* Step 2b : and mutually compatible */
+	/* step 2: ignored */
 
 	if (err)
 		return 2;
@@ -394,7 +395,7 @@ static int pc236_intr_cancel(struct comedi_device *dev,
 static irqreturn_t pc236_interrupt(int irq, void *d)
 {
 	struct comedi_device *dev = d;
-	struct comedi_subdevice *s = &dev->subdevices[1];
+	struct comedi_subdevice *s = dev->subdevices + 1;
 	int handled;
 
 	handled = pc236_intr_check(dev);
@@ -413,13 +414,15 @@ static void pc236_report_attach(struct comedi_device *dev, unsigned int irq)
 	char tmpbuf[60];
 	int tmplen;
 
-	if (is_isa_board(thisboard))
+	if (IS_ENABLED(CONFIG_COMEDI_AMPLC_PC236_ISA) &&
+	    thisboard->bustype == isa_bustype)
 		tmplen = scnprintf(tmpbuf, sizeof(tmpbuf),
 				   "(base %#lx) ", dev->iobase);
-	else if (is_pci_board(thisboard))
+	else if (IS_ENABLED(CONFIG_COMEDI_AMPLC_PC236_PCI) &&
+		 thisboard->bustype == pci_bustype) {
 		tmplen = scnprintf(tmpbuf, sizeof(tmpbuf),
 				   "(pci %s) ", pci_name(pcidev));
-	else
+	} else
 		tmplen = 0;
 	if (irq)
 		tmplen += scnprintf(&tmpbuf[tmplen], sizeof(tmpbuf) - tmplen,
@@ -446,14 +449,14 @@ static int pc236_common_attach(struct comedi_device *dev, unsigned long iobase,
 	if (ret)
 		return ret;
 
-	s = &dev->subdevices[0];
+	s = dev->subdevices + 0;
 	/* digital i/o subdevice (8255) */
 	ret = subdev_8255_init(dev, s, NULL, iobase);
 	if (ret < 0) {
 		dev_err(dev->class_dev, "error! out of memory!\n");
 		return ret;
 	}
-	s = &dev->subdevices[1];
+	s = dev->subdevices + 1;
 	dev->read_subdev = s;
 	s->type = COMEDI_SUBD_UNUSED;
 	pc236_intr_disable(dev);
@@ -514,14 +517,16 @@ static int pc236_attach(struct comedi_device *dev, struct comedi_devconfig *it)
 		return ret;
 	}
 	/* Process options according to bus type. */
-	if (is_isa_board(thisboard)) {
+	if (IS_ENABLED(CONFIG_COMEDI_AMPLC_PC236_ISA) &&
+	    thisboard->bustype == isa_bustype) {
 		unsigned long iobase = it->options[0];
 		unsigned int irq = it->options[1];
 		ret = pc236_request_region(dev, iobase, PC236_IO_SIZE);
 		if (ret < 0)
 			return ret;
 		return pc236_common_attach(dev, iobase, irq, 0);
-	} else if (is_pci_board(thisboard)) {
+	} else if (IS_ENABLED(CONFIG_COMEDI_AMPLC_PC236_PCI) &&
+		   thisboard->bustype == pci_bustype) {
 		struct pci_dev *pci_dev;
 
 		pci_dev = pc236_find_pci_dev(dev, it);
@@ -545,7 +550,7 @@ static int __devinit pc236_attach_pci(struct comedi_device *dev,
 {
 	int ret;
 
-	if (!DO_PCI)
+	if (!IS_ENABLED(CONFIG_COMEDI_AMPLC_PC236_PCI))
 		return -EINVAL;
 
 	dev_info(dev->class_dev, PC236_DRIVER_NAME ": attach pci %s\n",
@@ -573,6 +578,7 @@ static int __devinit pc236_attach_pci(struct comedi_device *dev,
 static void pc236_detach(struct comedi_device *dev)
 {
 	const struct pc236_board *thisboard = comedi_board(dev);
+	struct pci_dev *pcidev = comedi_to_pci_dev(dev);
 
 	if (!thisboard)
 		return;
@@ -581,17 +587,14 @@ static void pc236_detach(struct comedi_device *dev)
 	if (dev->irq)
 		free_irq(dev->irq, dev);
 	if (dev->subdevices)
-		subdev_8255_cleanup(dev, &dev->subdevices[0]);
-	if (is_isa_board(thisboard)) {
+		subdev_8255_cleanup(dev, dev->subdevices + 0);
+	if (pcidev) {
+		if (dev->iobase)
+			comedi_pci_disable(pcidev);
+		pci_dev_put(pcidev);
+	} else {
 		if (dev->iobase)
 			release_region(dev->iobase, PC236_IO_SIZE);
-	} else if (is_pci_board(thisboard)) {
-		struct pci_dev *pcidev = comedi_to_pci_dev(dev);
-		if (pcidev) {
-			if (dev->iobase)
-				comedi_pci_disable(pcidev);
-			pci_dev_put(pcidev);
-		}
 	}
 }
 
@@ -612,7 +615,7 @@ static struct comedi_driver amplc_pc236_driver = {
 	.num_names = ARRAY_SIZE(pc236_boards),
 };
 
-#if DO_PCI
+#if IS_ENABLED(CONFIG_COMEDI_AMPLC_PC236_PCI)
 static DEFINE_PCI_DEVICE_TABLE(pc236_pci_table) = {
 	{ PCI_DEVICE(PCI_VENDOR_ID_AMPLICON, PCI_DEVICE_ID_AMPLICON_PCI236) },
 	{0}

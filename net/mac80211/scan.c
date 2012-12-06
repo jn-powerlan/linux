@@ -407,7 +407,7 @@ static void ieee80211_scan_state_send_probe(struct ieee80211_local *local,
 	enum ieee80211_band band = local->hw.conf.channel->band;
 
 	sdata = rcu_dereference_protected(local->scan_sdata,
-					  lockdep_is_held(&local->mtx));
+					  lockdep_is_held(&local->mtx));;
 
 	for (i = 0; i < local->scan_req->n_ssids; i++)
 		ieee80211_send_probe_req(
@@ -416,8 +416,7 @@ static void ieee80211_scan_state_send_probe(struct ieee80211_local *local,
 			local->scan_req->ssids[i].ssid_len,
 			local->scan_req->ie, local->scan_req->ie_len,
 			local->scan_req->rates[band], false,
-			local->scan_req->no_cck,
-			local->hw.conf.channel);
+			local->scan_req->no_cck);
 
 	/*
 	 * After sending probe requests, wait for probe responses
@@ -480,10 +479,11 @@ static int __ieee80211_start_scan(struct ieee80211_sub_if_data *sdata,
 	if (local->ops->hw_scan) {
 		__set_bit(SCAN_HW_SCANNING, &local->scanning);
 	} else if ((req->n_channels == 1) &&
-		   (req->channels[0] == local->oper_channel)) {
-		/*
-		 * If we are scanning only on the operating channel
-		 * then we do not need to stop normal activities
+		   (req->channels[0]->center_freq ==
+		    local->hw.conf.channel->center_freq)) {
+
+		/* If we are scanning only on the current channel, then
+		 * we do not need to stop normal activities
 		 */
 		unsigned long next_delay;
 
@@ -917,7 +917,6 @@ int ieee80211_request_sched_scan_start(struct ieee80211_sub_if_data *sdata,
 				       struct cfg80211_sched_scan_request *req)
 {
 	struct ieee80211_local *local = sdata->local;
-	struct ieee80211_sched_scan_ies sched_scan_ies = {};
 	int ret, i;
 
 	mutex_lock(&local->mtx);
@@ -936,28 +935,33 @@ int ieee80211_request_sched_scan_start(struct ieee80211_sub_if_data *sdata,
 		if (!local->hw.wiphy->bands[i])
 			continue;
 
-		sched_scan_ies.ie[i] = kzalloc(2 + IEEE80211_MAX_SSID_LEN +
-					       local->scan_ies_len +
-					       req->ie_len,
-					       GFP_KERNEL);
-		if (!sched_scan_ies.ie[i]) {
+		local->sched_scan_ies.ie[i] = kzalloc(2 +
+						      IEEE80211_MAX_SSID_LEN +
+						      local->scan_ies_len +
+						      req->ie_len,
+						      GFP_KERNEL);
+		if (!local->sched_scan_ies.ie[i]) {
 			ret = -ENOMEM;
 			goto out_free;
 		}
 
-		sched_scan_ies.len[i] =
-			ieee80211_build_preq_ies(local, sched_scan_ies.ie[i],
+		local->sched_scan_ies.len[i] =
+			ieee80211_build_preq_ies(local,
+						 local->sched_scan_ies.ie[i],
 						 req->ie, req->ie_len, i,
 						 (u32) -1, 0);
 	}
 
-	ret = drv_sched_scan_start(local, sdata, req, &sched_scan_ies);
-	if (ret == 0)
+	ret = drv_sched_scan_start(local, sdata, req,
+				   &local->sched_scan_ies);
+	if (ret == 0) {
 		rcu_assign_pointer(local->sched_scan_sdata, sdata);
+		goto out;
+	}
 
 out_free:
 	while (i > 0)
-		kfree(sched_scan_ies.ie[--i]);
+		kfree(local->sched_scan_ies.ie[--i]);
 out:
 	mutex_unlock(&local->mtx);
 	return ret;
@@ -966,7 +970,7 @@ out:
 int ieee80211_request_sched_scan_stop(struct ieee80211_sub_if_data *sdata)
 {
 	struct ieee80211_local *local = sdata->local;
-	int ret = 0;
+	int ret = 0, i;
 
 	mutex_lock(&local->mtx);
 
@@ -975,9 +979,12 @@ int ieee80211_request_sched_scan_stop(struct ieee80211_sub_if_data *sdata)
 		goto out;
 	}
 
-	if (rcu_access_pointer(local->sched_scan_sdata))
-		drv_sched_scan_stop(local, sdata);
+	if (rcu_access_pointer(local->sched_scan_sdata)) {
+		for (i = 0; i < IEEE80211_NUM_BANDS; i++)
+			kfree(local->sched_scan_ies.ie[i]);
 
+		drv_sched_scan_stop(local, sdata);
+	}
 out:
 	mutex_unlock(&local->mtx);
 
@@ -999,6 +1006,7 @@ void ieee80211_sched_scan_stopped_work(struct work_struct *work)
 	struct ieee80211_local *local =
 		container_of(work, struct ieee80211_local,
 			     sched_scan_stopped_work);
+	int i;
 
 	mutex_lock(&local->mtx);
 
@@ -1006,6 +1014,9 @@ void ieee80211_sched_scan_stopped_work(struct work_struct *work)
 		mutex_unlock(&local->mtx);
 		return;
 	}
+
+	for (i = 0; i < IEEE80211_NUM_BANDS; i++)
+		kfree(local->sched_scan_ies.ie[i]);
 
 	rcu_assign_pointer(local->sched_scan_sdata, NULL);
 

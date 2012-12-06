@@ -17,8 +17,6 @@
 #include "2t3e3.h"
 #include "ctrl.h"
 
-static int dc_init_descriptor_list(struct channel *sc);
-
 void dc_init(struct channel *sc)
 {
 	u32 val;
@@ -309,7 +307,7 @@ void dc_set_loopback(struct channel *sc, u32 mode)
 			      SBE_2T3E3_21143_VAL_FULL_DUPLEX_MODE);
 }
 
-static int dc_init_descriptor_list(struct channel *sc)
+u32 dc_init_descriptor_list(struct channel *sc)
 {
 	u32 i, j;
 	struct sk_buff *m;
@@ -319,7 +317,7 @@ static int dc_init_descriptor_list(struct channel *sc)
 					    sizeof(t3e3_rx_desc_t), GFP_KERNEL);
 	if (sc->ether.rx_ring == NULL) {
 		dev_err(&sc->pdev->dev, "SBE 2T3E3: no buffer space for RX ring\n");
-		return -ENOMEM;
+		return ENOMEM;
 	}
 
 	if (sc->ether.tx_ring == NULL)
@@ -329,7 +327,7 @@ static int dc_init_descriptor_list(struct channel *sc)
 		kfree(sc->ether.rx_ring);
 		sc->ether.rx_ring = NULL;
 		dev_err(&sc->pdev->dev, "SBE 2T3E3: no buffer space for RX ring\n");
-		return -ENOMEM;
+		return ENOMEM;
 	}
 
 
@@ -353,7 +351,7 @@ static int dc_init_descriptor_list(struct channel *sc)
 				sc->ether.tx_ring = NULL;
 				dev_err(&sc->pdev->dev, "SBE 2T3E3: token_alloc err:"
 					" no buffer space for RX ring\n");
-				return -ENOBUFS;
+				return ENOBUFS;
 			}
 			sc->ether.rx_data[i] = m;
 		}

@@ -210,14 +210,10 @@ order they appear in the channel list.
 
 #include "../comedidev.h"
 
-#include "comedi_fc.h"
 #include "8255.h"
 #include "8253.h"
 
 #define DIO200_DRIVER_NAME	"amplc_dio200"
-
-#define DO_ISA	IS_ENABLED(CONFIG_COMEDI_AMPLC_DIO200_ISA)
-#define DO_PCI	IS_ENABLED(CONFIG_COMEDI_AMPLC_DIO200_PCI)
 
 /* PCI IDs */
 #define PCI_VENDOR_ID_AMPLICON 0x14dc
@@ -276,12 +272,12 @@ enum dio200_model {
 };
 
 enum dio200_layout {
-#if DO_ISA
+#if IS_ENABLED(CONFIG_COMEDI_AMPLC_DIO200_ISA)
 	pc212_layout,
 	pc214_layout,
 #endif
 	pc215_layout,
-#if DO_ISA
+#if IS_ENABLED(CONFIG_COMEDI_AMPLC_DIO200_ISA)
 	pc218_layout,
 #endif
 	pc272_layout
@@ -296,7 +292,7 @@ struct dio200_board {
 };
 
 static const struct dio200_board dio200_boards[] = {
-#if DO_ISA
+#if IS_ENABLED(CONFIG_COMEDI_AMPLC_DIO200_ISA)
 	{
 	 .name = "pc212e",
 	 .bustype = isa_bustype,
@@ -328,7 +324,7 @@ static const struct dio200_board dio200_boards[] = {
 	 .layout = pc272_layout,
 	 },
 #endif
-#if DO_PCI
+#if IS_ENABLED(CONFIG_COMEDI_AMPLC_DIO200_PCI)
 	{
 	 .name = "pci215",
 	 .devid = PCI_DEVICE_ID_AMPLICON_PCI215,
@@ -371,7 +367,7 @@ struct dio200_layout_struct {
 };
 
 static const struct dio200_layout_struct dio200_layouts[] = {
-#if DO_ISA
+#if IS_ENABLED(CONFIG_COMEDI_AMPLC_DIO200_ISA)
 	[pc212_layout] = {
 			  .n_subdevs = 6,
 			  .sdtype = {sd_8255, sd_8254, sd_8254, sd_8254,
@@ -400,7 +396,7 @@ static const struct dio200_layout_struct dio200_layouts[] = {
 			  .has_int_sce = 1,
 			  .has_clk_gat_sce = 1,
 			  },
-#if DO_ISA
+#if IS_ENABLED(CONFIG_COMEDI_AMPLC_DIO200_ISA)
 	[pc218_layout] = {
 			  .n_subdevs = 7,
 			  .sdtype = {sd_8254, sd_8254, sd_8255, sd_8254,
@@ -453,16 +449,6 @@ struct dio200_subdev_intr {
 	int continuous;
 };
 
-static inline bool is_pci_board(const struct dio200_board *board)
-{
-	return DO_PCI && board->bustype == pci_bustype;
-}
-
-static inline bool is_isa_board(const struct dio200_board *board)
-{
-	return DO_ISA && board->bustype == isa_bustype;
-}
-
 /*
  * This function looks for a board matching the supplied PCI device.
  */
@@ -472,7 +458,7 @@ dio200_find_pci_board(struct pci_dev *pci_dev)
 	unsigned int i;
 
 	for (i = 0; i < ARRAY_SIZE(dio200_boards); i++)
-		if (is_pci_board(&dio200_boards[i]) &&
+		if (dio200_boards[i].bustype == pci_bustype &&
 		    pci_dev->device == dio200_boards[i].devid)
 			return &dio200_boards[i];
 	return NULL;
@@ -772,24 +758,52 @@ dio200_subdev_intr_cmdtest(struct comedi_device *dev,
 			   struct comedi_subdevice *s, struct comedi_cmd *cmd)
 {
 	int err = 0;
+	unsigned int tmp;
 
-	/* Step 1 : check if triggers are trivially valid */
+	/* step 1: make sure trigger sources are trivially valid */
 
-	err |= cfc_check_trigger_src(&cmd->start_src, TRIG_NOW | TRIG_INT);
-	err |= cfc_check_trigger_src(&cmd->scan_begin_src, TRIG_EXT);
-	err |= cfc_check_trigger_src(&cmd->convert_src, TRIG_NOW);
-	err |= cfc_check_trigger_src(&cmd->scan_end_src, TRIG_COUNT);
-	err |= cfc_check_trigger_src(&cmd->stop_src, TRIG_COUNT | TRIG_NONE);
+	tmp = cmd->start_src;
+	cmd->start_src &= (TRIG_NOW | TRIG_INT);
+	if (!cmd->start_src || tmp != cmd->start_src)
+		err++;
+
+	tmp = cmd->scan_begin_src;
+	cmd->scan_begin_src &= TRIG_EXT;
+	if (!cmd->scan_begin_src || tmp != cmd->scan_begin_src)
+		err++;
+
+	tmp = cmd->convert_src;
+	cmd->convert_src &= TRIG_NOW;
+	if (!cmd->convert_src || tmp != cmd->convert_src)
+		err++;
+
+	tmp = cmd->scan_end_src;
+	cmd->scan_end_src &= TRIG_COUNT;
+	if (!cmd->scan_end_src || tmp != cmd->scan_end_src)
+		err++;
+
+	tmp = cmd->stop_src;
+	cmd->stop_src &= (TRIG_COUNT | TRIG_NONE);
+	if (!cmd->stop_src || tmp != cmd->stop_src)
+		err++;
 
 	if (err)
 		return 1;
 
-	/* Step 2a : make sure trigger sources are unique */
+	/* step 2: make sure trigger sources are unique and mutually
+		   compatible */
 
-	err |= cfc_check_trigger_is_unique(cmd->start_src);
-	err |= cfc_check_trigger_is_unique(cmd->stop_src);
-
-	/* Step 2b : and mutually compatible */
+	/* these tests are true if more than one _src bit is set */
+	if ((cmd->start_src & (cmd->start_src - 1)) != 0)
+		err++;
+	if ((cmd->scan_begin_src & (cmd->scan_begin_src - 1)) != 0)
+		err++;
+	if ((cmd->convert_src & (cmd->convert_src - 1)) != 0)
+		err++;
+	if ((cmd->scan_end_src & (cmd->scan_end_src - 1)) != 0)
+		err++;
+	if ((cmd->stop_src & (cmd->stop_src - 1)) != 0)
+		err++;
 
 	if (err)
 		return 2;
@@ -951,15 +965,15 @@ static irqreturn_t dio200_interrupt(int irq, void *d)
 {
 	struct comedi_device *dev = d;
 	struct dio200_private *devpriv = dev->private;
-	struct comedi_subdevice *s;
 	int handled;
 
 	if (!dev->attached)
 		return IRQ_NONE;
 
 	if (devpriv->intr_sd >= 0) {
-		s = &dev->subdevices[devpriv->intr_sd];
-		handled = dio200_handle_read_intr(dev, s);
+		handled = dio200_handle_read_intr(dev,
+						  dev->subdevices +
+						  devpriv->intr_sd);
 	} else {
 		handled = 0;
 	}
@@ -1214,10 +1228,12 @@ static void dio200_report_attach(struct comedi_device *dev, unsigned int irq)
 	char tmpbuf[60];
 	int tmplen;
 
-	if (is_isa_board(thisboard))
+	if (IS_ENABLED(CONFIG_COMEDI_AMPLC_DIO200_ISA) &&
+	    thisboard->bustype == isa_bustype)
 		tmplen = scnprintf(tmpbuf, sizeof(tmpbuf),
 				   "(base %#lx) ", dev->iobase);
-	else if (is_pci_board(thisboard))
+	else if (IS_ENABLED(CONFIG_COMEDI_AMPLC_DIO200_PCI) &&
+		 thisboard->bustype == pci_bustype)
 		tmplen = scnprintf(tmpbuf, sizeof(tmpbuf),
 				   "(pci %s) ", pci_name(pcidev));
 	else
@@ -1345,7 +1361,8 @@ static int dio200_attach(struct comedi_device *dev, struct comedi_devconfig *it)
 	}
 
 	/* Process options and reserve resources according to bus type. */
-	if (is_isa_board(thisboard)) {
+	if (IS_ENABLED(CONFIG_COMEDI_AMPLC_DIO200_ISA) &&
+	    thisboard->bustype == isa_bustype) {
 		unsigned long iobase;
 		unsigned int irq;
 
@@ -1355,7 +1372,8 @@ static int dio200_attach(struct comedi_device *dev, struct comedi_devconfig *it)
 		if (ret < 0)
 			return ret;
 		return dio200_common_attach(dev, iobase, irq, 0);
-	} else if (is_pci_board(thisboard)) {
+	} else if (IS_ENABLED(CONFIG_COMEDI_AMPLC_DIO200_PCI) &&
+		   thisboard->bustype == pci_bustype) {
 		struct pci_dev *pci_dev;
 
 		pci_dev = dio200_find_pci_dev(dev, it);
@@ -1379,7 +1397,7 @@ static int __devinit dio200_attach_pci(struct comedi_device *dev,
 {
 	int ret;
 
-	if (!DO_PCI)
+	if (!IS_ENABLED(CONFIG_COMEDI_AMPLC_DIO200_PCI))
 		return -EINVAL;
 
 	dev_info(dev->class_dev, DIO200_DRIVER_NAME ": attach pci %s\n",
@@ -1407,6 +1425,7 @@ static int __devinit dio200_attach_pci(struct comedi_device *dev,
 static void dio200_detach(struct comedi_device *dev)
 {
 	const struct dio200_board *thisboard = comedi_board(dev);
+	struct pci_dev *pcidev = comedi_to_pci_dev(dev);
 	const struct dio200_layout_struct *layout;
 	unsigned n;
 
@@ -1433,16 +1452,13 @@ static void dio200_detach(struct comedi_device *dev)
 			}
 		}
 	}
-	if (is_isa_board(thisboard)) {
+	if (pcidev) {
+		if (dev->iobase)
+			comedi_pci_disable(pcidev);
+		pci_dev_put(pcidev);
+	} else {
 		if (dev->iobase)
 			release_region(dev->iobase, DIO200_IO_SIZE);
-	} else if (is_pci_board(thisboard)) {
-		struct pci_dev *pcidev = comedi_to_pci_dev(dev);
-		if (pcidev) {
-			if (dev->iobase)
-				comedi_pci_disable(pcidev);
-			pci_dev_put(pcidev);
-		}
 	}
 }
 
@@ -1463,7 +1479,7 @@ static struct comedi_driver amplc_dio200_driver = {
 	.num_names = ARRAY_SIZE(dio200_boards),
 };
 
-#if DO_PCI
+#if IS_ENABLED(CONFIG_COMEDI_AMPLC_DIO200_PCI)
 static DEFINE_PCI_DEVICE_TABLE(dio200_pci_table) = {
 	{ PCI_DEVICE(PCI_VENDOR_ID_AMPLICON, PCI_DEVICE_ID_AMPLICON_PCI215) },
 	{ PCI_DEVICE(PCI_VENDOR_ID_AMPLICON, PCI_DEVICE_ID_AMPLICON_PCI272) },

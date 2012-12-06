@@ -28,10 +28,10 @@
 #include <linux/firmware.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
-#include <drm/drmP.h>
+#include "drmP.h"
 #include "radeon.h"
 #include "radeon_asic.h"
-#include <drm/radeon_drm.h>
+#include "radeon_drm.h"
 #include "rv770d.h"
 #include "atom.h"
 #include "avivod.h"
@@ -124,7 +124,7 @@ void rv770_pm_misc(struct radeon_device *rdev)
 /*
  * GART
  */
-static int rv770_pcie_gart_enable(struct radeon_device *rdev)
+int rv770_pcie_gart_enable(struct radeon_device *rdev)
 {
 	u32 tmp;
 	int r, i;
@@ -175,7 +175,7 @@ static int rv770_pcie_gart_enable(struct radeon_device *rdev)
 	return 0;
 }
 
-static void rv770_pcie_gart_disable(struct radeon_device *rdev)
+void rv770_pcie_gart_disable(struct radeon_device *rdev)
 {
 	u32 tmp;
 	int i;
@@ -201,7 +201,7 @@ static void rv770_pcie_gart_disable(struct radeon_device *rdev)
 	radeon_gart_table_vram_unpin(rdev);
 }
 
-static void rv770_pcie_gart_fini(struct radeon_device *rdev)
+void rv770_pcie_gart_fini(struct radeon_device *rdev)
 {
 	radeon_gart_fini(rdev);
 	rv770_pcie_gart_disable(rdev);
@@ -209,7 +209,7 @@ static void rv770_pcie_gart_fini(struct radeon_device *rdev)
 }
 
 
-static void rv770_agp_enable(struct radeon_device *rdev)
+void rv770_agp_enable(struct radeon_device *rdev)
 {
 	u32 tmp;
 	int i;
@@ -839,7 +839,7 @@ void r700_vram_gtt_location(struct radeon_device *rdev, struct radeon_mc *mc)
 	}
 }
 
-static int rv770_mc_init(struct radeon_device *rdev)
+int rv770_mc_init(struct radeon_device *rdev)
 {
 	u32 tmp;
 	int chansize, numchan;

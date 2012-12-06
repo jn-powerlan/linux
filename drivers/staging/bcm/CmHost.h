@@ -35,7 +35,8 @@ typedef struct stLocalSFAddRequestAlt{
     B_UINT16                        u16VCID;
 
 
-	struct bcm_connect_mgr_params sfParameterSet;
+	/// \brief structure ParameterSet
+    stServiceFlowParamSI              sfParameterSet;
 
     //USE_MEMORY_MANAGER();
 }stLocalSFAddRequestAlt;
@@ -49,9 +50,12 @@ typedef struct stLocalSFAddIndicationAlt{
     B_UINT16                        u16CID;
     /// \brief 16bitVCID
     B_UINT16                        u16VCID;
-	struct bcm_connect_mgr_params sfAuthorizedSet;
-	struct bcm_connect_mgr_params sfAdmittedSet;
-	struct bcm_connect_mgr_params sfActiveSet;
+	/// \brief structure AuthorizedSet
+    stServiceFlowParamSI              sfAuthorizedSet;
+    /// \brief structure AdmittedSet
+    stServiceFlowParamSI              sfAdmittedSet;
+	/// \brief structure ActiveSet
+    stServiceFlowParamSI              sfActiveSet;
 
 	B_UINT8 						u8CC;	/**<  Confirmation Code*/
 	B_UINT8 						u8Padd; 	/**<  8-bit Padding */
@@ -68,9 +72,12 @@ typedef struct stLocalSFAddConfirmationAlt{
     B_UINT16                        u16CID;
     /// \brief 16bitVCID
     B_UINT16                        u16VCID;
-	struct bcm_connect_mgr_params sfAuthorizedSet;
-	struct bcm_connect_mgr_params sfAdmittedSet;
-	struct bcm_connect_mgr_params sfActiveSet;
+    /// \brief structure AuthorizedSet
+    stServiceFlowParamSI              sfAuthorizedSet;
+    /// \brief structure AdmittedSet
+    stServiceFlowParamSI              sfAdmittedSet;
+    /// \brief structure ActiveSet
+    stServiceFlowParamSI              sfActiveSet;
 }stLocalSFAddConfirmationAlt;
 
 
@@ -84,13 +91,16 @@ typedef struct stLocalSFChangeRequestAlt{
     /// \brief 16bitVCID
     B_UINT16                        u16VCID;
 	/*
-	//Pointer location at which following connection manager param Structure can be read
-	//from the target. We only get the address location and we need to read out the
-	//entire connection manager param structure at the given location on target
+	//Pointer location at which following Service Flow param Structure can be read
+	//from the target. We get only the address location and we need to read out the
+	//entire SF param structure at the given location on target
 	*/
-	struct bcm_connect_mgr_params sfAuthorizedSet;
-	struct bcm_connect_mgr_params sfAdmittedSet;
-	struct bcm_connect_mgr_params sfActiveSet;
+    /// \brief structure AuthorizedSet
+    stServiceFlowParamSI              sfAuthorizedSet;
+    /// \brief structure AdmittedSet
+    stServiceFlowParamSI              sfAdmittedSet;
+    /// \brief structure ParameterSet
+    stServiceFlowParamSI              sfActiveSet;
 
 	B_UINT8 						u8CC;	/**<  Confirmation Code*/
 	B_UINT8 						u8Padd; 	/**<  8-bit Padding */
@@ -107,9 +117,12 @@ typedef struct stLocalSFChangeConfirmationAlt{
     B_UINT16                        u16CID;
     /// \brief 16bitVCID
     B_UINT16                        u16VCID;
-	struct bcm_connect_mgr_params sfAuthorizedSet;
-	struct bcm_connect_mgr_params sfAdmittedSet;
-	struct bcm_connect_mgr_params sfActiveSet;
+    /// \brief structure AuthorizedSet
+    stServiceFlowParamSI              sfAuthorizedSet;
+    /// \brief structure AdmittedSet
+    stServiceFlowParamSI              sfAdmittedSet;
+    /// \brief structure ActiveSet
+    stServiceFlowParamSI              sfActiveSet;
 
 }stLocalSFChangeConfirmationAlt;
 
@@ -122,9 +135,12 @@ typedef struct stLocalSFChangeIndicationAlt{
     B_UINT16                        u16CID;
     /// \brief 16bitVCID
     B_UINT16                        u16VCID;
-	struct bcm_connect_mgr_params sfAuthorizedSet;
-	struct bcm_connect_mgr_params sfAdmittedSet;
-	struct bcm_connect_mgr_params sfActiveSet;
+    /// \brief structure AuthorizedSet
+    stServiceFlowParamSI              sfAuthorizedSet;
+    /// \brief structure AdmittedSet
+    stServiceFlowParamSI              sfAdmittedSet;
+    /// \brief structure ActiveSet
+    stServiceFlowParamSI              sfActiveSet;
 
 	B_UINT8 						u8CC;	/**<  Confirmation Code*/
 	B_UINT8 						u8Padd; 	/**<  8-bit Padding */

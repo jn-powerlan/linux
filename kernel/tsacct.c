@@ -26,9 +26,7 @@
 /*
  * fill in basic accounting fields
  */
-void bacct_add_tsk(struct user_namespace *user_ns,
-		   struct pid_namespace *pid_ns,
-		   struct taskstats *stats, struct task_struct *tsk)
+void bacct_add_tsk(struct taskstats *stats, struct task_struct *tsk)
 {
 	const struct cred *tcred;
 	struct timespec uptime, ts;
@@ -57,13 +55,13 @@ void bacct_add_tsk(struct user_namespace *user_ns,
 		stats->ac_flag |= AXSIG;
 	stats->ac_nice	 = task_nice(tsk);
 	stats->ac_sched	 = tsk->policy;
-	stats->ac_pid	 = task_pid_nr_ns(tsk, pid_ns);
+	stats->ac_pid	 = tsk->pid;
 	rcu_read_lock();
 	tcred = __task_cred(tsk);
-	stats->ac_uid	 = from_kuid_munged(user_ns, tcred->uid);
-	stats->ac_gid	 = from_kgid_munged(user_ns, tcred->gid);
+	stats->ac_uid	 = tcred->uid;
+	stats->ac_gid	 = tcred->gid;
 	stats->ac_ppid	 = pid_alive(tsk) ?
-		task_tgid_nr_ns(rcu_dereference(tsk->real_parent), pid_ns) : 0;
+				rcu_dereference(tsk->real_parent)->tgid : 0;
 	rcu_read_unlock();
 	stats->ac_utime = cputime_to_usecs(tsk->utime);
 	stats->ac_stime = cputime_to_usecs(tsk->stime);

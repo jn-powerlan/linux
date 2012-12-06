@@ -820,7 +820,6 @@ cntrlEnd:
 
 		if (copy_from_user(psFwInfo, IoBuffer.InputBuffer, IoBuffer.InputLength)) {
 			up(&Adapter->fw_download_sema);
-			kfree(psFwInfo);
 			return -EFAULT;
 		}
 
@@ -830,7 +829,6 @@ cntrlEnd:
 			BCM_DEBUG_PRINT(Adapter, DBG_TYPE_PRINTK, 0, 0, "Something else is wrong %lu\n",
 					psFwInfo->u32FirmwareLength);
 			up(&Adapter->fw_download_sema);
-			kfree(psFwInfo);
 			Status = -EINVAL;
 			return Status;
 		}

@@ -14,8 +14,7 @@
 
 	ocp@f1000000 {
 		compatible = "simple-bus";
-		ranges = <0x00000000 0xf1000000 0x4000000
-		          0xf5000000 0xf5000000 0x0000400>;
+		ranges = <0 0xf1000000 0x4000000>;
 		#address-cells = <1>;
 		#size-cells = <1>;
 
@@ -105,15 +104,6 @@
 			interrupts = <29>;
 			clock-frequency = <100000>;
 			status = "disabled";
-		};
-
-		crypto@30000 {
-			compatible = "marvell,orion-crypto";
-			reg = <0x30000 0x10000>,
-			      <0xf5000000 0x800>;
-			reg-names = "regs", "sram";
-			interrupts = <22>;
-			status = "okay";
 		};
 	};
 };

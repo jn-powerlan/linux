@@ -177,25 +177,25 @@ u32 clk_get_pclk_div(void)
 
 static struct map_desc lpc32xx_io_desc[] __initdata = {
 	{
-		.virtual	= (unsigned long)IO_ADDRESS(LPC32XX_AHB0_START),
+		.virtual	= IO_ADDRESS(LPC32XX_AHB0_START),
 		.pfn		= __phys_to_pfn(LPC32XX_AHB0_START),
 		.length		= LPC32XX_AHB0_SIZE,
 		.type		= MT_DEVICE
 	},
 	{
-		.virtual	= (unsigned long)IO_ADDRESS(LPC32XX_AHB1_START),
+		.virtual	= IO_ADDRESS(LPC32XX_AHB1_START),
 		.pfn		= __phys_to_pfn(LPC32XX_AHB1_START),
 		.length		= LPC32XX_AHB1_SIZE,
 		.type		= MT_DEVICE
 	},
 	{
-		.virtual	= (unsigned long)IO_ADDRESS(LPC32XX_FABAPB_START),
+		.virtual	= IO_ADDRESS(LPC32XX_FABAPB_START),
 		.pfn		= __phys_to_pfn(LPC32XX_FABAPB_START),
 		.length		= LPC32XX_FABAPB_SIZE,
 		.type		= MT_DEVICE
 	},
 	{
-		.virtual	= (unsigned long)IO_ADDRESS(LPC32XX_IRAM_BASE),
+		.virtual	= IO_ADDRESS(LPC32XX_IRAM_BASE),
 		.pfn		= __phys_to_pfn(LPC32XX_IRAM_BASE),
 		.length		= (LPC32XX_IRAM_BANK_SIZE * 2),
 		.type		= MT_DEVICE

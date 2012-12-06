@@ -173,7 +173,7 @@ static void all_subsystem(void)
 		all_suite(&subsystems[i]);
 }
 
-int cmd_bench(int argc, const char **argv, const char *prefix __maybe_unused)
+int cmd_bench(int argc, const char **argv, const char *prefix __used)
 {
 	int i, j, status = 0;
 

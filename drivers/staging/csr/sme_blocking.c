@@ -18,10 +18,10 @@
 
 
 /*
- * This file also contains the implementation of the asynchronous
+ * This file also contains the implementation of the asyncronous
  * requests to the SME.
  *
- * Before calling an asynchronous SME function, we call sme_init_request()
+ * Before calling an asyncronous SME function, we call sme_init_request()
  * which gets hold of the SME semaphore and updates the request status.
  * The semaphore makes sure that there is only one pending request to
  * the SME at a time.

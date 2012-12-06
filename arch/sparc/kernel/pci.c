@@ -622,6 +622,10 @@ void __devinit pcibios_fixup_bus(struct pci_bus *pbus)
 {
 }
 
+void pcibios_update_irq(struct pci_dev *pdev, int irq)
+{
+}
+
 resource_size_t pcibios_align_resource(void *data, const struct resource *res,
 				resource_size_t size, resource_size_t align)
 {
@@ -779,7 +783,7 @@ static int __pci_mmap_make_offset(struct pci_dev *pdev,
 static void __pci_mmap_set_flags(struct pci_dev *dev, struct vm_area_struct *vma,
 					    enum pci_mmap_state mmap_state)
 {
-	vma->vm_flags |= VM_IO | VM_DONTEXPAND | VM_DONTDUMP;
+	vma->vm_flags |= (VM_IO | VM_RESERVED);
 }
 
 /* Set vm_page_prot of VMA, as appropriate for this architecture, for a pci

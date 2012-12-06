@@ -81,13 +81,12 @@ struct x86_init_mapping {
 
 /**
  * struct x86_init_paging - platform specific paging functions
- * @pagetable_init:	platform specific paging initialization call to setup
- *			the kernel pagetables and prepare accessors functions.
- *			Callback must call paging_init(). Called once after the
- *			direct mapping for phys memory is available.
+ * @pagetable_setup_start:	platform specific pre paging_init() call
+ * @pagetable_setup_done:	platform specific post paging_init() call
  */
 struct x86_init_paging {
-	void (*pagetable_init)(void);
+	void (*pagetable_setup_start)(pgd_t *base);
+	void (*pagetable_setup_done)(pgd_t *base);
 };
 
 /**

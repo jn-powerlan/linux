@@ -30,7 +30,7 @@
 #include <asm/fiq.h>
 
 #include <mach/irqs.h>
-#include <linux/platform_data/asoc-imx-ssi.h>
+#include <mach/ssi.h>
 
 #include "imx-ssi.h"
 

@@ -292,12 +292,12 @@ out:
 #else
 static int dasd_ioctl_reset_profile(struct dasd_block *block)
 {
-	return -ENOTTY;
+	return -ENOSYS;
 }
 
 static int dasd_ioctl_read_profile(struct dasd_block *block, void __user *argp)
 {
-	return -ENOTTY;
+	return -ENOSYS;
 }
 #endif
 

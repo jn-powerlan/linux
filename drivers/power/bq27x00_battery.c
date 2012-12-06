@@ -814,8 +814,7 @@ static int bq27x00_battery_probe(struct i2c_client *client,
 	di->bat.name = name;
 	di->bus.read = &bq27x00_read_i2c;
 
-	retval = bq27x00_powersupply_init(di);
-	if (retval)
+	if (bq27x00_powersupply_init(di))
 		goto batt_failed_3;
 
 	i2c_set_clientdata(client, di);

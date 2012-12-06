@@ -16,7 +16,9 @@
 #include <linux/smc91x.h>
 
 #include <mach/hardware.h>
-#include "../mach-omap2/debug-devices.h"
+
+#include <plat/board.h>
+
 
 /* Many OMAP development platforms reuse the same "debug board"; these
  * platforms include H2, H3, H4, and Perseus2.

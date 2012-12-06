@@ -29,7 +29,6 @@
 #include <linux/irq.h>
 #include <linux/time.h>
 #include <linux/gpio.h>
-#include <linux/platform_data/gpio-omap.h>
 
 #include <asm/mach/time.h>
 #include <asm/mach/irq.h>
@@ -39,6 +38,9 @@
 #include <plat/clock.h>
 #include <plat/sram.h>
 #include <plat/dma.h>
+#include <plat/board.h>
+
+#include <mach/irqs.h>
 
 #include "common.h"
 #include "prm2xxx_3xxx.h"
@@ -349,6 +351,16 @@ int __init omap2_pm_init(void)
 	}
 
 	prcm_setup_regs();
+
+	/* Hack to prevent MPU retention when STI console is enabled. */
+	{
+		const struct omap_sti_console_config *sti;
+
+		sti = omap_get_config(OMAP_TAG_STI_CONSOLE,
+				      struct omap_sti_console_config);
+		if (sti != NULL && sti->enable)
+			sti_console_enabled = 1;
+	}
 
 	/*
 	 * We copy the assembler sleep/wakeup routines to SRAM.

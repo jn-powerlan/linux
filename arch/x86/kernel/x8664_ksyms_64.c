@@ -13,12 +13,8 @@
 #include <asm/ftrace.h>
 
 #ifdef CONFIG_FUNCTION_TRACER
-/* mcount and __fentry__ are defined in assembly */
-#ifdef CC_USING_FENTRY
-EXPORT_SYMBOL(__fentry__);
-#else
+/* mcount is defined in assembly */
 EXPORT_SYMBOL(mcount);
-#endif
 #endif
 
 EXPORT_SYMBOL(__get_user_1);

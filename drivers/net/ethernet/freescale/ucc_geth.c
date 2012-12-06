@@ -42,6 +42,7 @@
 #include <asm/machdep.h>
 
 #include "ucc_geth.h"
+#include "fsl_pq_mdio.h"
 
 #undef DEBUG
 

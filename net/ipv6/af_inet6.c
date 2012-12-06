@@ -822,6 +822,13 @@ out:
 	return segs;
 }
 
+struct ipv6_gro_cb {
+	struct napi_gro_cb napi;
+	int proto;
+};
+
+#define IPV6_GRO_CB(skb) ((struct ipv6_gro_cb *)(skb)->cb)
+
 static struct sk_buff **ipv6_gro_receive(struct sk_buff **head,
 					 struct sk_buff *skb)
 {
@@ -867,7 +874,7 @@ static struct sk_buff **ipv6_gro_receive(struct sk_buff **head,
 		iph = ipv6_hdr(skb);
 	}
 
-	NAPI_GRO_CB(skb)->proto = proto;
+	IPV6_GRO_CB(skb)->proto = proto;
 
 	flush--;
 	nlen = skb_network_header_len(skb);
@@ -923,7 +930,7 @@ static int ipv6_gro_complete(struct sk_buff *skb)
 				 sizeof(*iph));
 
 	rcu_read_lock();
-	ops = rcu_dereference(inet6_protos[NAPI_GRO_CB(skb)->proto]);
+	ops = rcu_dereference(inet6_protos[IPV6_GRO_CB(skb)->proto]);
 	if (WARN_ON(!ops || !ops->gro_complete))
 		goto out_unlock;
 

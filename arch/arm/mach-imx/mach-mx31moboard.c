@@ -47,7 +47,7 @@
 #include <mach/hardware.h>
 #include <mach/iomux-mx3.h>
 #include <mach/ulpi.h>
-#include <linux/platform_data/asoc-imx-ssi.h>
+#include <mach/ssi.h>
 
 #include "devices-imx31.h"
 

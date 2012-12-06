@@ -22,7 +22,8 @@
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>
 
-#include <mach/mux.h>
+#include <plat/mux.h>
+#include <plat/board.h>
 
 #include <mach/usb.h>
 
@@ -51,6 +52,9 @@ static struct omap_usb_config generic1610_usb_config __initdata = {
 };
 #endif
 
+static struct omap_board_config_kernel generic_config[] __initdata = {
+};
+
 static void __init omap_generic_init(void)
 {
 #ifdef CONFIG_ARCH_OMAP15XX
@@ -72,6 +76,8 @@ static void __init omap_generic_init(void)
 	}
 #endif
 
+	omap_board_config = generic_config;
+	omap_board_config_size = ARRAY_SIZE(generic_config);
 	omap_serial_init();
 	omap_register_i2c_bus(1, 100, NULL, 0);
 }

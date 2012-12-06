@@ -499,15 +499,20 @@ error_ret:
 }
 
 /* fixme, confirm ordering in this function */
-static int __devexit ade7759_remove(struct spi_device *spi)
+static int ade7759_remove(struct spi_device *spi)
 {
+	int ret;
 	struct iio_dev *indio_dev = spi_get_drvdata(spi);
 
 	iio_device_unregister(indio_dev);
-	ade7759_stop_device(&indio_dev->dev);
+	ret = ade7759_stop_device(&(indio_dev->dev));
+	if (ret)
+		goto err_ret;
+
 	iio_device_free(indio_dev);
 
-	return 0;
+err_ret:
+	return ret;
 }
 
 static struct spi_driver ade7759_driver = {

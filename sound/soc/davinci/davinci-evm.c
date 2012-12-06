@@ -22,6 +22,10 @@
 #include <asm/dma.h>
 #include <asm/mach-types.h>
 
+#include <mach/asp.h>
+#include <mach/edma.h>
+#include <mach/mux.h>
+
 #include "davinci-pcm.h"
 #include "davinci-i2s.h"
 #include "davinci-mcasp.h"
@@ -156,7 +160,7 @@ static struct snd_soc_dai_link dm6446_evm_dai = {
 	.cpu_dai_name = "davinci-mcbsp",
 	.codec_dai_name = "tlv320aic3x-hifi",
 	.codec_name = "tlv320aic3x-codec.1-001b",
-	.platform_name = "davinci-mcbsp",
+	.platform_name = "davinci-pcm-audio",
 	.init = evm_aic3x_init,
 	.ops = &evm_ops,
 };
@@ -167,7 +171,7 @@ static struct snd_soc_dai_link dm355_evm_dai = {
 	.cpu_dai_name = "davinci-mcbsp.1",
 	.codec_dai_name = "tlv320aic3x-hifi",
 	.codec_name = "tlv320aic3x-codec.1-001b",
-	.platform_name = "davinci-mcbsp.1",
+	.platform_name = "davinci-pcm-audio",
 	.init = evm_aic3x_init,
 	.ops = &evm_ops,
 };
@@ -181,15 +185,14 @@ static struct snd_soc_dai_link dm365_evm_dai = {
 	.init = evm_aic3x_init,
 	.codec_name = "tlv320aic3x-codec.1-0018",
 	.ops = &evm_ops,
-	.platform_name = "davinci-mcbsp",
 #elif defined(CONFIG_SND_DM365_VOICE_CODEC)
 	.name = "Voice Codec - CQ93VC",
 	.stream_name = "CQ93",
 	.cpu_dai_name = "davinci-vcif",
 	.codec_dai_name = "cq93vc-hifi",
 	.codec_name = "cq93vc-codec",
-	.platform_name = "davinci-vcif",
 #endif
+	.platform_name = "davinci-pcm-audio",
 };
 
 static struct snd_soc_dai_link dm6467_evm_dai[] = {
@@ -198,7 +201,7 @@ static struct snd_soc_dai_link dm6467_evm_dai[] = {
 		.stream_name = "AIC3X",
 		.cpu_dai_name= "davinci-mcasp.0",
 		.codec_dai_name = "tlv320aic3x-hifi",
-		.platform_name = "davinci-mcasp.0",
+		.platform_name ="davinci-pcm-audio",
 		.codec_name = "tlv320aic3x-codec.0-001a",
 		.init = evm_aic3x_init,
 		.ops = &evm_ops,
@@ -209,7 +212,7 @@ static struct snd_soc_dai_link dm6467_evm_dai[] = {
 		.cpu_dai_name= "davinci-mcasp.1",
 		.codec_dai_name = "dit-hifi",
 		.codec_name = "spdif_dit",
-		.platform_name = "davinci-mcasp.1",
+		.platform_name = "davinci-pcm-audio",
 		.ops = &evm_spdif_ops,
 	},
 };
@@ -220,7 +223,7 @@ static struct snd_soc_dai_link da830_evm_dai = {
 	.cpu_dai_name = "davinci-mcasp.1",
 	.codec_dai_name = "tlv320aic3x-hifi",
 	.codec_name = "tlv320aic3x-codec.1-0018",
-	.platform_name = "davinci-mcasp.1",
+	.platform_name = "davinci-pcm-audio",
 	.init = evm_aic3x_init,
 	.ops = &evm_ops,
 };
@@ -231,7 +234,7 @@ static struct snd_soc_dai_link da850_evm_dai = {
 	.cpu_dai_name= "davinci-mcasp.0",
 	.codec_dai_name = "tlv320aic3x-hifi",
 	.codec_name = "tlv320aic3x-codec.1-0018",
-	.platform_name = "davinci-mcasp.0",
+	.platform_name = "davinci-pcm-audio",
 	.init = evm_aic3x_init,
 	.ops = &evm_ops,
 };

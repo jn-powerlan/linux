@@ -1188,6 +1188,8 @@ static const struct ni_board_struct ni_boards[] = {
 	 },
 };
 
+#define n_pcimio_boards ARRAY_SIZE(ni_boards)
+
 struct ni_private {
 NI_PRIVATE_COMMON};
 #define devpriv ((struct ni_private *)dev->private)
@@ -1500,6 +1502,7 @@ static uint32_t m_series_stc_readl(struct comedi_device *dev, int reg)
 
 #include "ni_mio_common.c"
 
+static int pcimio_find_device(struct comedi_device *dev, int bus, int slot);
 static int pcimio_ai_change(struct comedi_device *dev,
 			    struct comedi_subdevice *s, unsigned long new_size);
 static int pcimio_ao_change(struct comedi_device *dev,
@@ -1581,45 +1584,24 @@ static void pcimio_detach(struct comedi_device *dev)
 		mite_free_ring(devpriv->cdo_mite_ring);
 		mite_free_ring(devpriv->gpct_mite_ring[0]);
 		mite_free_ring(devpriv->gpct_mite_ring[1]);
-		if (devpriv->mite) {
+		if (devpriv->mite)
 			mite_unsetup(devpriv->mite);
-			mite_free(devpriv->mite);
-		}
 	}
 }
 
-static const struct ni_board_struct *
-pcimio_find_boardinfo(struct pci_dev *pcidev)
-{
-	unsigned int device_id = pcidev->device;
-	unsigned int n;
-
-	for (n = 0; n < ARRAY_SIZE(ni_boards); n++) {
-		const struct ni_board_struct *board = &ni_boards[n];
-		if (board->device_id == device_id)
-			return board;
-	}
-	return NULL;
-}
-
-static int __devinit pcimio_attach_pci(struct comedi_device *dev,
-				       struct pci_dev *pcidev)
+static int pcimio_attach(struct comedi_device *dev, struct comedi_devconfig *it)
 {
 	int ret;
 
-	dev_info(dev->class_dev, "ni_pcimio: attach %s\n", pci_name(pcidev));
+	dev_info(dev->class_dev, "ni_pcimio: attach\n");
 
 	ret = ni_alloc_private(dev);
 	if (ret < 0)
 		return ret;
 
-	dev->board_ptr = pcimio_find_boardinfo(pcidev);
-	if (!dev->board_ptr)
-		return -ENODEV;
-
-	devpriv->mite = mite_alloc(pcidev);
-	if (!devpriv->mite)
-		return -ENOMEM;
+	ret = pcimio_find_device(dev, it->options[0], it->options[1]);
+	if (ret < 0)
+		return ret;
 
 	dev_dbg(dev->class_dev, "%s\n", boardtype.name);
 	dev->board_name = boardtype.name;
@@ -1677,7 +1659,7 @@ static int __devinit pcimio_attach_pci(struct comedi_device *dev,
 		}
 	}
 
-	ret = ni_E_init(dev);
+	ret = ni_E_init(dev, it);
 	if (ret < 0)
 		return ret;
 
@@ -1688,6 +1670,34 @@ static int __devinit pcimio_attach_pci(struct comedi_device *dev,
 	dev->subdevices[NI_DIO_SUBDEV].buf_change = &pcimio_dio_change;
 
 	return ret;
+}
+
+static int pcimio_find_device(struct comedi_device *dev, int bus, int slot)
+{
+	struct mite_struct *mite;
+	int i;
+
+	for (mite = mite_devices; mite; mite = mite->next) {
+		if (mite->used)
+			continue;
+		if (bus || slot) {
+			if (bus != mite->pcidev->bus->number ||
+			    slot != PCI_SLOT(mite->pcidev->devfn))
+				continue;
+		}
+
+		for (i = 0; i < n_pcimio_boards; i++) {
+			if (mite_device_id(mite) == ni_boards[i].device_id) {
+				dev->board_ptr = ni_boards + i;
+				devpriv->mite = mite;
+
+				return 0;
+			}
+		}
+	}
+	pr_warn("no device found\n");
+	mite_list_devices();
+	return -EIO;
 }
 
 static int pcimio_ai_change(struct comedi_device *dev,
@@ -1755,7 +1765,7 @@ static int pcimio_dio_change(struct comedi_device *dev,
 static struct comedi_driver ni_pcimio_driver = {
 	.driver_name	= "ni_pcimio",
 	.module		= THIS_MODULE,
-	.attach_pci	= pcimio_attach_pci,
+	.attach		= pcimio_attach,
 	.detach		= pcimio_detach,
 };
 
@@ -1834,7 +1844,7 @@ static struct pci_driver ni_pcimio_pci_driver = {
 	.probe		= ni_pcimio_pci_probe,
 	.remove		= __devexit_p(ni_pcimio_pci_remove)
 };
-module_comedi_pci_driver(ni_pcimio_driver, ni_pcimio_pci_driver);
+module_comedi_pci_driver(ni_pcimio_driver, ni_pcimio_pci_driver)
 
 MODULE_AUTHOR("Comedi http://www.comedi.org");
 MODULE_DESCRIPTION("Comedi low-level driver");

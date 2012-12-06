@@ -27,6 +27,7 @@
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>
 #include <asm/mach/flash.h>
+#include <mach/system.h>
 #include <mach/vreg.h>
 #include <mach/board.h>
 

@@ -6,7 +6,7 @@
  * (Reliable Autonomic Distributed Object Store).
  */
 
-#include <linux/ceph/msgr.h>
+#include "msgr.h"
 
 /*
  * osdmap encoding versions

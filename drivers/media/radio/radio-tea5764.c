@@ -151,11 +151,8 @@ int tea5764_i2c_read(struct tea5764_device *radio)
 	u16 *p = (u16 *) &radio->regs;
 
 	struct i2c_msg msgs[1] = {
-		{	.addr = radio->i2c_client->addr,
-			.flags = I2C_M_RD,
-			.len = sizeof(radio->regs),
-			.buf = (void *)&radio->regs
-		},
+		{ radio->i2c_client->addr, I2C_M_RD, sizeof(radio->regs),
+			(void *)&radio->regs },
 	};
 	if (i2c_transfer(radio->i2c_client->adapter, msgs, 1) != 1)
 		return -EIO;
@@ -170,11 +167,7 @@ int tea5764_i2c_write(struct tea5764_device *radio)
 	struct tea5764_write_regs wr;
 	struct tea5764_regs *r = &radio->regs;
 	struct i2c_msg msgs[1] = {
-		{
-			.addr = radio->i2c_client->addr,
-			.len = sizeof(wr),
-			.buf = (void *)&wr
-		},
+		{ radio->i2c_client->addr, 0, sizeof(wr), (void *) &wr },
 	};
 	wr.intreg  = r->intreg & 0xff;
 	wr.frqset  = __cpu_to_be16(r->frqset);
@@ -455,7 +448,7 @@ static int vidioc_g_audio(struct file *file, void *priv,
 }
 
 static int vidioc_s_audio(struct file *file, void *priv,
-			   const struct v4l2_audio *a)
+			   struct v4l2_audio *a)
 {
 	if (a->index != 0)
 		return -EINVAL;

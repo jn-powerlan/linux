@@ -53,9 +53,9 @@ static inline int numa_cpu_node(int cpu)
 #endif	/* CONFIG_NUMA */
 
 #ifdef CONFIG_X86_32
-# include <asm/numa_32.h>
+# include "numa_32.h"
 #else
-# include <asm/numa_64.h>
+# include "numa_64.h"
 #endif
 
 #ifdef CONFIG_NUMA

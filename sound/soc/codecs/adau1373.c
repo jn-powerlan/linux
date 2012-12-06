@@ -1392,7 +1392,17 @@ static struct i2c_driver adau1373_i2c_driver = {
 	.id_table = adau1373_i2c_id,
 };
 
-module_i2c_driver(adau1373_i2c_driver);
+static int __init adau1373_init(void)
+{
+	return i2c_add_driver(&adau1373_i2c_driver);
+}
+module_init(adau1373_init);
+
+static void __exit adau1373_exit(void)
+{
+	i2c_del_driver(&adau1373_i2c_driver);
+}
+module_exit(adau1373_exit);
 
 MODULE_DESCRIPTION("ASoC ADAU1373 driver");
 MODULE_AUTHOR("Lars-Peter Clausen <lars@metafoo.de>");

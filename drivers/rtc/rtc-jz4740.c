@@ -42,7 +42,7 @@ struct jz4740_rtc {
 
 	struct rtc_device *rtc;
 
-	int irq;
+	unsigned int irq;
 
 	spinlock_t lock;
 };

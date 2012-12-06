@@ -25,9 +25,10 @@
  *          Alex Deucher
  *          Jerome Glisse
  */
-#include <drm/drmP.h>
+#include "drmP.h"
+#include "drm_sarea.h"
 #include "radeon.h"
-#include <drm/radeon_drm.h>
+#include "radeon_drm.h"
 #include "radeon_asic.h"
 
 #include <linux/vga_switcheroo.h>
@@ -50,7 +51,6 @@ int radeon_driver_unload_kms(struct drm_device *dev)
 
 	if (rdev == NULL)
 		return 0;
-	radeon_acpi_fini(rdev);
 	radeon_modeset_fini(rdev);
 	radeon_device_fini(rdev);
 	kfree(rdev);
@@ -103,6 +103,11 @@ int radeon_driver_load_kms(struct drm_device *dev, unsigned long flags)
 		goto out;
 	}
 
+	/* Call ACPI methods */
+	acpi_status = radeon_acpi_init(rdev);
+	if (acpi_status)
+		dev_dbg(&dev->pdev->dev, "Error during ACPI methods call\n");
+
 	/* Again modeset_init should fail only on fatal error
 	 * otherwise it should provide enough functionalities
 	 * for shadowfb to run
@@ -110,17 +115,6 @@ int radeon_driver_load_kms(struct drm_device *dev, unsigned long flags)
 	r = radeon_modeset_init(rdev);
 	if (r)
 		dev_err(&dev->pdev->dev, "Fatal error during modeset init\n");
-
-	/* Call ACPI methods: require modeset init
-	 * but failure is not fatal
-	 */
-	if (!r) {
-		acpi_status = radeon_acpi_init(rdev);
-		if (acpi_status)
-		dev_dbg(&dev->pdev->dev,
-				"Error during ACPI methods call\n");
-	}
-
 out:
 	if (r)
 		radeon_driver_unload_kms(dev);
@@ -419,7 +413,6 @@ int radeon_driver_open_kms(struct drm_device *dev, struct drm_file *file_priv)
 	/* new gpu have virtual address space support */
 	if (rdev->family >= CHIP_CAYMAN) {
 		struct radeon_fpriv *fpriv;
-		struct radeon_bo_va *bo_va;
 		int r;
 
 		fpriv = kzalloc(sizeof(*fpriv), GFP_KERNEL);
@@ -427,15 +420,7 @@ int radeon_driver_open_kms(struct drm_device *dev, struct drm_file *file_priv)
 			return -ENOMEM;
 		}
 
-		radeon_vm_init(rdev, &fpriv->vm);
-
-		/* map the ib pool buffer read only into
-		 * virtual address space */
-		bo_va = radeon_vm_bo_add(rdev, &fpriv->vm,
-					 rdev->ring_tmp_bo.bo);
-		r = radeon_vm_bo_set_addr(rdev, bo_va, RADEON_VA_IB_OFFSET,
-					  RADEON_VM_PAGE_READABLE |
-					  RADEON_VM_PAGE_SNOOPED);
+		r = radeon_vm_init(rdev, &fpriv->vm);
 		if (r) {
 			radeon_vm_fini(rdev, &fpriv->vm);
 			kfree(fpriv);
@@ -463,17 +448,6 @@ void radeon_driver_postclose_kms(struct drm_device *dev,
 	/* new gpu have virtual address space support */
 	if (rdev->family >= CHIP_CAYMAN && file_priv->driver_priv) {
 		struct radeon_fpriv *fpriv = file_priv->driver_priv;
-		struct radeon_bo_va *bo_va;
-		int r;
-
-		r = radeon_bo_reserve(rdev->ring_tmp_bo.bo, false);
-		if (!r) {
-			bo_va = radeon_vm_bo_find(&fpriv->vm,
-						  rdev->ring_tmp_bo.bo);
-			if (bo_va)
-				radeon_vm_bo_rmv(rdev, bo_va);
-			radeon_bo_unreserve(rdev->ring_tmp_bo.bo);
-		}
 
 		radeon_vm_fini(rdev, &fpriv->vm);
 		kfree(fpriv);

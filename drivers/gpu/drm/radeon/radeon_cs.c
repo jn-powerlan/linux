@@ -24,15 +24,15 @@
  * Authors:
  *    Jerome Glisse <glisse@freedesktop.org>
  */
-#include <drm/drmP.h>
-#include <drm/radeon_drm.h>
+#include "drmP.h"
+#include "radeon_drm.h"
 #include "radeon_reg.h"
 #include "radeon.h"
 
 void r100_cs_dump_packet(struct radeon_cs_parser *p,
 			 struct radeon_cs_packet *pkt);
 
-static int radeon_cs_parser_relocs(struct radeon_cs_parser *p)
+int radeon_cs_parser_relocs(struct radeon_cs_parser *p)
 {
 	struct drm_device *ddev = p->rdev->ddev;
 	struct radeon_cs_chunk *chunk;
@@ -115,27 +115,19 @@ static int radeon_cs_get_ring(struct radeon_cs_parser *p, u32 ring, s32 priority
 	return 0;
 }
 
-static void radeon_cs_sync_to(struct radeon_cs_parser *p,
-			      struct radeon_fence *fence)
-{
-	struct radeon_fence *other;
-
-	if (!fence)
-		return;
-
-	other = p->ib.sync_to[fence->ring];
-	p->ib.sync_to[fence->ring] = radeon_fence_later(fence, other);
-}
-
 static void radeon_cs_sync_rings(struct radeon_cs_parser *p)
 {
 	int i;
 
 	for (i = 0; i < p->nrelocs; i++) {
-		if (!p->relocs[i].robj)
+		struct radeon_fence *a, *b;
+
+		if (!p->relocs[i].robj || !p->relocs[i].robj->tbo.sync_obj)
 			continue;
 
-		radeon_cs_sync_to(p, p->relocs[i].robj->tbo.sync_obj);
+		a = p->relocs[i].robj->tbo.sync_obj;
+		b = p->ib.sync_to[a->ring];
+		p->ib.sync_to[a->ring] = radeon_fence_later(a, b);
 	}
 }
 
@@ -286,6 +278,30 @@ int radeon_cs_parser_init(struct radeon_cs_parser *p, void *data)
 	return 0;
 }
 
+static void radeon_bo_vm_fence_va(struct radeon_cs_parser *parser,
+				  struct radeon_fence *fence)
+{
+	struct radeon_fpriv *fpriv = parser->filp->driver_priv;
+	struct radeon_vm *vm = &fpriv->vm;
+	struct radeon_bo_list *lobj;
+
+	if (parser->chunk_ib_idx == -1) {
+		return;
+	}
+	if ((parser->cs_flags & RADEON_CS_USE_VM) == 0) {
+		return;
+	}
+
+	list_for_each_entry(lobj, &parser->validated, tv.head) {
+		struct radeon_bo_va *bo_va;
+		struct radeon_bo *rbo = lobj->bo;
+
+		bo_va = radeon_bo_va(rbo, vm);
+		radeon_fence_unref(&bo_va->fence);
+		bo_va->fence = radeon_fence_ref(fence);
+	}
+}
+
 /**
  * cs_parser_fini() - clean parser states
  * @parser:	parser structure holding parsing context.
@@ -299,6 +315,8 @@ static void radeon_cs_parser_fini(struct radeon_cs_parser *parser, int error)
 	unsigned i;
 
 	if (!error) {
+		/* fence all bo va before ttm_eu_fence_buffer_objects so bo are still reserved */
+		radeon_bo_vm_fence_va(parser, parser->ib.fence);
 		ttm_eu_fence_buffer_objects(&parser->validated,
 					    parser->ib.fence);
 	} else {
@@ -345,7 +363,7 @@ static int radeon_cs_ib_chunk(struct radeon_device *rdev,
 	 * uncached).
 	 */
 	r =  radeon_ib_get(rdev, parser->ring, &parser->ib,
-			   NULL, ib_chunk->length_dw * 4);
+			   ib_chunk->length_dw * 4);
 	if (r) {
 		DRM_ERROR("Failed to get ib !\n");
 		return r;
@@ -362,6 +380,7 @@ static int radeon_cs_ib_chunk(struct radeon_device *rdev,
 		return r;
 	}
 	radeon_cs_sync_rings(parser);
+	parser->ib.vm_id = 0;
 	r = radeon_ib_schedule(rdev, &parser->ib, NULL);
 	if (r) {
 		DRM_ERROR("Failed to schedule IB !\n");
@@ -372,15 +391,10 @@ static int radeon_cs_ib_chunk(struct radeon_device *rdev,
 static int radeon_bo_vm_update_pte(struct radeon_cs_parser *parser,
 				   struct radeon_vm *vm)
 {
-	struct radeon_device *rdev = parser->rdev;
 	struct radeon_bo_list *lobj;
 	struct radeon_bo *bo;
 	int r;
 
-	r = radeon_vm_bo_update_pte(rdev, vm, rdev->ring_tmp_bo.bo, &rdev->ring_tmp_bo.bo->tbo.mem);
-	if (r) {
-		return r;
-	}
 	list_for_each_entry(lobj, &parser->validated, tv.head) {
 		bo = lobj->bo;
 		r = radeon_vm_bo_update_pte(parser->rdev, vm, bo, &bo->tbo.mem);
@@ -412,7 +426,7 @@ static int radeon_cs_ib_vm_chunk(struct radeon_device *rdev,
 			return -EINVAL;
 		}
 		r =  radeon_ib_get(rdev, parser->ring, &parser->const_ib,
-				   vm, ib_chunk->length_dw * 4);
+				   ib_chunk->length_dw * 4);
 		if (r) {
 			DRM_ERROR("Failed to get const ib !\n");
 			return r;
@@ -436,7 +450,7 @@ static int radeon_cs_ib_vm_chunk(struct radeon_device *rdev,
 		return -EINVAL;
 	}
 	r =  radeon_ib_get(rdev, parser->ring, &parser->ib,
-			   vm, ib_chunk->length_dw * 4);
+			   ib_chunk->length_dw * 4);
 	if (r) {
 		DRM_ERROR("Failed to get ib !\n");
 		return r;
@@ -454,7 +468,7 @@ static int radeon_cs_ib_vm_chunk(struct radeon_device *rdev,
 
 	mutex_lock(&rdev->vm_manager.lock);
 	mutex_lock(&vm->mutex);
-	r = radeon_vm_alloc_pt(rdev, vm);
+	r = radeon_vm_bind(rdev, vm);
 	if (r) {
 		goto out;
 	}
@@ -463,22 +477,32 @@ static int radeon_cs_ib_vm_chunk(struct radeon_device *rdev,
 		goto out;
 	}
 	radeon_cs_sync_rings(parser);
-	radeon_cs_sync_to(parser, vm->fence);
-	radeon_cs_sync_to(parser, radeon_vm_grab_id(rdev, vm, parser->ring));
+
+	parser->ib.vm_id = vm->id;
+	/* ib pool is bind at 0 in virtual address space,
+	 * so gpu_addr is the offset inside the pool bo
+	 */
+	parser->ib.gpu_addr = parser->ib.sa_bo->soffset;
 
 	if ((rdev->family >= CHIP_TAHITI) &&
 	    (parser->chunk_const_ib_idx != -1)) {
+		parser->const_ib.vm_id = vm->id;
+		/* ib pool is bind at 0 in virtual address space,
+		 * so gpu_addr is the offset inside the pool bo
+		 */
+		parser->const_ib.gpu_addr = parser->const_ib.sa_bo->soffset;
 		r = radeon_ib_schedule(rdev, &parser->ib, &parser->const_ib);
 	} else {
 		r = radeon_ib_schedule(rdev, &parser->ib, NULL);
 	}
 
-	if (!r) {
-		radeon_vm_fence(rdev, vm, parser->ib.fence);
-	}
-
 out:
-	radeon_vm_add_to_lru(rdev, vm);
+	if (!r) {
+		if (vm->fence) {
+			radeon_fence_unref(&vm->fence);
+		}
+		vm->fence = radeon_fence_ref(parser->ib.fence);
+	}
 	mutex_unlock(&vm->mutex);
 	mutex_unlock(&rdev->vm_manager.lock);
 	return r;

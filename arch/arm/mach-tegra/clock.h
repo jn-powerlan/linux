@@ -2,7 +2,6 @@
  * arch/arm/mach-tegra/include/mach/clock.h
  *
  * Copyright (C) 2010 Google, Inc.
- * Copyright (c) 2012 NVIDIA CORPORATION.  All rights reserved.
  *
  * Author:
  *	Colin Cross <ccross@google.com>
@@ -21,9 +20,9 @@
 #ifndef __MACH_TEGRA_CLOCK_H
 #define __MACH_TEGRA_CLOCK_H
 
-#include <linux/clk-provider.h>
 #include <linux/clkdev.h>
 #include <linux/list.h>
+#include <linux/spinlock.h>
 
 #include <mach/clk.h>
 
@@ -53,8 +52,7 @@
 #define ENABLE_ON_INIT		(1 << 28)
 #define PERIPH_ON_APB           (1 << 29)
 
-struct clk_tegra;
-#define to_clk_tegra(_hw) container_of(_hw, struct clk_tegra, hw)
+struct clk;
 
 struct clk_mux_sel {
 	struct clk	*input;
@@ -70,29 +68,47 @@ struct clk_pll_freq_table {
 	u8		cpcon;
 };
 
+struct clk_ops {
+	void		(*init)(struct clk *);
+	int		(*enable)(struct clk *);
+	void		(*disable)(struct clk *);
+	int		(*set_parent)(struct clk *, struct clk *);
+	int		(*set_rate)(struct clk *, unsigned long);
+	long		(*round_rate)(struct clk *, unsigned long);
+	void		(*reset)(struct clk *, bool);
+	int		(*clk_cfg_ex)(struct clk *,
+				enum tegra_clk_ex_param, u32);
+};
+
 enum clk_state {
 	UNINITIALIZED = 0,
 	ON,
 	OFF,
 };
 
-struct clk_tegra {
+struct clk {
 	/* node for master clocks list */
-	struct list_head	node;	/* node for list of all clocks */
+	struct list_head	node;		/* node for list of all clocks */
 	struct clk_lookup	lookup;
-	struct clk_hw		hw;
 
+#ifdef CONFIG_DEBUG_FS
+	struct dentry		*dent;
+#endif
 	bool			set;
-	unsigned long		fixed_rate;
+	struct clk_ops		*ops;
+	unsigned long		rate;
 	unsigned long		max_rate;
 	unsigned long		min_rate;
 	u32			flags;
 	const char		*name;
 
+	u32			refcnt;
 	enum clk_state		state;
+	struct clk		*parent;
 	u32			div;
 	u32			mul;
 
+	const struct clk_mux_sel	*inputs;
 	u32				reg;
 	u32				reg_shift;
 
@@ -128,8 +144,7 @@ struct clk_tegra {
 		} shared_bus_user;
 	} u;
 
-	void (*reset)(struct clk_hw *, bool);
-	int (*clk_cfg_ex)(struct clk_hw *, enum tegra_clk_ex_param, u32);
+	spinlock_t spinlock;
 };
 
 struct clk_duplicate {
@@ -144,10 +159,13 @@ struct tegra_clk_init_table {
 	bool enabled;
 };
 
-void tegra_clk_add(struct clk *c);
 void tegra2_init_clocks(void);
 void tegra30_init_clocks(void);
+void clk_init(struct clk *clk);
 struct clk *tegra_get_clock_by_name(const char *name);
+int clk_reparent(struct clk *c, struct clk *parent);
 void tegra_clk_init_from_table(struct tegra_clk_init_table *table);
+unsigned long clk_get_rate_locked(struct clk *c);
+int clk_set_rate_locked(struct clk *c, unsigned long rate);
 
 #endif

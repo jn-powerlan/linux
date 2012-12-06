@@ -28,8 +28,9 @@
 #include <linux/module.h>
 #include <linux/console.h>
 
-#include <drm/drmP.h>
-#include <drm/drm_crtc_helper.h>
+#include "drmP.h"
+#include "drm.h"
+#include "drm_crtc_helper.h"
 
 #include "ast_drv.h"
 

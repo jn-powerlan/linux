@@ -362,11 +362,10 @@ static int jr3_pci_open(struct comedi_device *dev)
 	return 0;
 }
 
-static int read_idm_word(const u8 *data, size_t size, int *pos,
-			 unsigned int *val)
+int read_idm_word(const u8 * data, size_t size, int *pos, unsigned int *val)
 {
 	int result = 0;
-	if (pos && val) {
+	if (pos != 0 && val != 0) {
 		/*  Skip over non hex */
 		for (; *pos < size && !isxdigit(data[*pos]); (*pos)++) {
 		}
@@ -876,7 +875,7 @@ static int jr3_pci_attach(struct comedi_device *dev,
 			p->maxdata_list[56] = 0xffff;
 			p->maxdata_list[57] = 0xffff;
 			/*  Channel specific range and maxdata */
-			dev->subdevices[i].range_table = NULL;
+			dev->subdevices[i].range_table = 0;
 			dev->subdevices[i].range_table_list =
 			    p->range_table_list;
 			dev->subdevices[i].maxdata = 0;

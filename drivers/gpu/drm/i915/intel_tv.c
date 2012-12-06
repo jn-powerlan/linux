@@ -30,11 +30,12 @@
  * Integrated TV-out support for the 915GM and 945GM.
  */
 
-#include <drm/drmP.h>
-#include <drm/drm_crtc.h>
-#include <drm/drm_edid.h>
+#include "drmP.h"
+#include "drm.h"
+#include "drm_crtc.h"
+#include "drm_edid.h"
 #include "intel_drv.h"
-#include <drm/i915_drm.h>
+#include "i915_drm.h"
 #include "i915_drv.h"
 
 enum tv_margin {
@@ -835,37 +836,22 @@ static struct intel_tv *intel_attached_tv(struct drm_connector *connector)
 			    base);
 }
 
-static bool
-intel_tv_get_hw_state(struct intel_encoder *encoder, enum pipe *pipe)
-{
-	struct drm_device *dev = encoder->base.dev;
-	struct drm_i915_private *dev_priv = dev->dev_private;
-	u32 tmp = I915_READ(TV_CTL);
-
-	if (!(tmp & TV_ENC_ENABLE))
-		return false;
-
-	*pipe = PORT_TO_PIPE(tmp);
-
-	return true;
-}
-
 static void
-intel_enable_tv(struct intel_encoder *encoder)
+intel_tv_dpms(struct drm_encoder *encoder, int mode)
 {
-	struct drm_device *dev = encoder->base.dev;
+	struct drm_device *dev = encoder->dev;
 	struct drm_i915_private *dev_priv = dev->dev_private;
 
-	I915_WRITE(TV_CTL, I915_READ(TV_CTL) | TV_ENC_ENABLE);
-}
-
-static void
-intel_disable_tv(struct intel_encoder *encoder)
-{
-	struct drm_device *dev = encoder->base.dev;
-	struct drm_i915_private *dev_priv = dev->dev_private;
-
-	I915_WRITE(TV_CTL, I915_READ(TV_CTL) & ~TV_ENC_ENABLE);
+	switch (mode) {
+	case DRM_MODE_DPMS_ON:
+		I915_WRITE(TV_CTL, I915_READ(TV_CTL) | TV_ENC_ENABLE);
+		break;
+	case DRM_MODE_DPMS_STANDBY:
+	case DRM_MODE_DPMS_SUSPEND:
+	case DRM_MODE_DPMS_OFF:
+		I915_WRITE(TV_CTL, I915_READ(TV_CTL) & ~TV_ENC_ENABLE);
+		break;
+	}
 }
 
 static const struct tv_mode *
@@ -909,14 +895,17 @@ intel_tv_mode_fixup(struct drm_encoder *encoder,
 		    const struct drm_display_mode *mode,
 		    struct drm_display_mode *adjusted_mode)
 {
+	struct drm_device *dev = encoder->dev;
 	struct intel_tv *intel_tv = enc_to_intel_tv(encoder);
 	const struct tv_mode *tv_mode = intel_tv_mode_find(intel_tv);
+	struct intel_encoder *other_encoder;
 
 	if (!tv_mode)
 		return false;
 
-	if (intel_encoder_check_is_cloned(&intel_tv->base))
-		return false;
+	for_each_encoder_on_crtc(dev, encoder->crtc, other_encoder)
+		if (&other_encoder->base != encoder)
+			return false;
 
 	adjusted_mode->clock = tv_mode->clock;
 	return true;
@@ -1314,9 +1303,12 @@ intel_tv_detect(struct drm_connector *connector, bool force)
 	if (force) {
 		struct intel_load_detect_pipe tmp;
 
-		if (intel_get_load_detect_pipe(connector, &mode, &tmp)) {
+		if (intel_get_load_detect_pipe(&intel_tv->base, connector,
+					       &mode, &tmp)) {
 			type = intel_tv_detect_type(intel_tv, connector);
-			intel_release_load_detect_pipe(connector, &tmp);
+			intel_release_load_detect_pipe(&intel_tv->base,
+						       connector,
+						       &tmp);
 		} else
 			return connector_status_unknown;
 	} else
@@ -1482,20 +1474,22 @@ intel_tv_set_property(struct drm_connector *connector, struct drm_property *prop
 	}
 
 	if (changed && crtc)
-		intel_set_mode(crtc, &crtc->mode,
-			       crtc->x, crtc->y, crtc->fb);
+		drm_crtc_helper_set_mode(crtc, &crtc->mode, crtc->x,
+				crtc->y, crtc->fb);
 out:
 	return ret;
 }
 
 static const struct drm_encoder_helper_funcs intel_tv_helper_funcs = {
+	.dpms = intel_tv_dpms,
 	.mode_fixup = intel_tv_mode_fixup,
+	.prepare = intel_encoder_prepare,
 	.mode_set = intel_tv_mode_set,
-	.disable = intel_encoder_noop,
+	.commit = intel_encoder_commit,
 };
 
 static const struct drm_connector_funcs intel_tv_connector_funcs = {
-	.dpms = intel_connector_dpms,
+	.dpms = drm_helper_connector_dpms,
 	.detect = intel_tv_detect,
 	.destroy = intel_tv_destroy,
 	.set_property = intel_tv_set_property,
@@ -1625,15 +1619,10 @@ intel_tv_init(struct drm_device *dev)
 	drm_encoder_init(dev, &intel_encoder->base, &intel_tv_enc_funcs,
 			 DRM_MODE_ENCODER_TVDAC);
 
-	intel_encoder->enable = intel_enable_tv;
-	intel_encoder->disable = intel_disable_tv;
-	intel_encoder->get_hw_state = intel_tv_get_hw_state;
-	intel_connector->get_hw_state = intel_connector_get_hw_state;
-
 	intel_connector_attach_encoder(intel_connector, intel_encoder);
 	intel_encoder->type = INTEL_OUTPUT_TVOUT;
 	intel_encoder->crtc_mask = (1 << 0) | (1 << 1);
-	intel_encoder->cloneable = false;
+	intel_encoder->clone_mask = (1 << INTEL_TV_CLONE_BIT);
 	intel_encoder->base.possible_crtcs = ((1 << 0) | (1 << 1));
 	intel_encoder->base.possible_clones = (1 << INTEL_OUTPUT_TVOUT);
 	intel_tv->type = DRM_MODE_CONNECTOR_Unknown;

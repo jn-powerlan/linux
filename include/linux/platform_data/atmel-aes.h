@@ -1,7 +1,7 @@
 #ifndef __LINUX_ATMEL_AES_H
 #define __LINUX_ATMEL_AES_H
 
-#include <linux/platform_data/dma-atmel.h>
+#include <mach/at_hdmac.h>
 
 /**
  * struct aes_dma_data - DMA data for AES

@@ -504,7 +504,7 @@ struct cmipci {
 
 	spinlock_t reg_lock;
 
-#ifdef CONFIG_PM_SLEEP
+#ifdef CONFIG_PM
 	unsigned int saved_regs[0x20];
 	unsigned char saved_mixers[0x20];
 #endif
@@ -1962,12 +1962,6 @@ static int __devinit snd_cmipci_pcm_spdif_new(struct cmipci *cm, int device)
 	snd_pcm_lib_preallocate_pages_for_all(pcm, SNDRV_DMA_TYPE_DEV,
 					      snd_dma_pci_data(cm->pci), 64*1024, 128*1024);
 
-	err = snd_pcm_add_chmap_ctls(pcm, SNDRV_PCM_STREAM_PLAYBACK,
-				     snd_pcm_alt_chmaps, cm->max_channels, 0,
-				     NULL);
-	if (err < 0)
-		return err;
-
 	return 0;
 }
 
@@ -3321,7 +3315,7 @@ static void __devexit snd_cmipci_remove(struct pci_dev *pci)
 }
 
 
-#ifdef CONFIG_PM_SLEEP
+#ifdef CONFIG_PM
 /*
  * power management
  */
@@ -3409,7 +3403,7 @@ static SIMPLE_DEV_PM_OPS(snd_cmipci_pm, snd_cmipci_suspend, snd_cmipci_resume);
 #define SND_CMIPCI_PM_OPS	&snd_cmipci_pm
 #else
 #define SND_CMIPCI_PM_OPS	NULL
-#endif /* CONFIG_PM_SLEEP */
+#endif /* CONFIG_PM */
 
 static struct pci_driver cmipci_driver = {
 	.name = KBUILD_MODNAME,

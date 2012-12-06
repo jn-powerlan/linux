@@ -600,7 +600,8 @@ static int btmrvl_sdio_card_to_host(struct btmrvl_private *priv)
 exit:
 	if (ret) {
 		hdev->stat.err_rx++;
-		kfree_skb(skb);
+		if (skb)
+			kfree_skb(skb);
 	}
 
 	return ret;
@@ -955,9 +956,11 @@ static int btmrvl_sdio_probe(struct sdio_func *func,
 	BT_INFO("vendor=0x%x, device=0x%x, class=%d, fn=%d",
 			id->vendor, id->device, id->class, func->num);
 
-	card = devm_kzalloc(&func->dev, sizeof(*card), GFP_KERNEL);
-	if (!card)
-		return -ENOMEM;
+	card = kzalloc(sizeof(*card), GFP_KERNEL);
+	if (!card) {
+		ret = -ENOMEM;
+		goto done;
+	}
 
 	card->func = func;
 
@@ -971,7 +974,8 @@ static int btmrvl_sdio_probe(struct sdio_func *func,
 
 	if (btmrvl_sdio_register_dev(card) < 0) {
 		BT_ERR("Failed to register BT device!");
-		return -ENODEV;
+		ret = -ENODEV;
+		goto free_card;
 	}
 
 	/* Disable the interrupts on the card */
@@ -1019,6 +1023,9 @@ disable_host_int:
 	btmrvl_sdio_disable_host_int(card);
 unreg_dev:
 	btmrvl_sdio_unregister_dev(card);
+free_card:
+	kfree(card);
+done:
 	return ret;
 }
 
@@ -1040,6 +1047,7 @@ static void btmrvl_sdio_remove(struct sdio_func *func)
 			BT_DBG("unregester dev");
 			btmrvl_sdio_unregister_dev(card);
 			btmrvl_remove_card(card->priv);
+			kfree(card);
 		}
 	}
 }

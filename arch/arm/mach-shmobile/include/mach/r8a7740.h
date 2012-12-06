@@ -607,9 +607,9 @@ enum {
 };
 
 #ifdef CONFIG_PM
-extern void __init r8a7740_init_pm_domains(void);
-#else
-static inline void r8a7740_init_pm_domains(void) {}
+extern struct rmobile_pm_domain r8a7740_pd_a4s;
+extern struct rmobile_pm_domain r8a7740_pd_a3sp;
+extern struct rmobile_pm_domain r8a7740_pd_a4lc;
 #endif /* CONFIG_PM */
 
 #endif /* __ASM_R8A7740_H__ */

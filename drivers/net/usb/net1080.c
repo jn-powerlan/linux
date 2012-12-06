@@ -155,10 +155,12 @@ static void nc_dump_registers(struct usbnet *dev)
 	u8	reg;
 	u16	*vp = kmalloc(sizeof (u16));
 
-	if (!vp)
+	if (!vp) {
+		dbg("no memory?");
 		return;
+	}
 
-	netdev_dbg(dev->net, "registers:\n");
+	dbg("%s registers:", dev->net->name);
 	for (reg = 0; reg < 0x20; reg++) {
 		int retval;
 
@@ -170,10 +172,11 @@ static void nc_dump_registers(struct usbnet *dev)
 
 		retval = nc_register_read(dev, reg, vp);
 		if (retval < 0)
-			netdev_dbg(dev->net, "reg [0x%x] ==> error %d\n",
-				   reg, retval);
+			dbg("%s reg [0x%x] ==> error %d",
+				dev->net->name, reg, retval);
 		else
-			netdev_dbg(dev->net, "reg [0x%x] = 0x%x\n", reg, *vp);
+			dbg("%s reg [0x%x] = 0x%x",
+				dev->net->name, reg, *vp);
 	}
 	kfree(vp);
 }
@@ -297,15 +300,15 @@ static int net1080_reset(struct usbnet *dev)
 	// nc_dump_registers(dev);
 
 	if ((retval = nc_register_read(dev, REG_STATUS, vp)) < 0) {
-		netdev_dbg(dev->net, "can't read %s-%s status: %d\n",
-			   dev->udev->bus->bus_name, dev->udev->devpath, retval);
+		dbg("can't read %s-%s status: %d",
+			dev->udev->bus->bus_name, dev->udev->devpath, retval);
 		goto done;
 	}
 	status = *vp;
 	nc_dump_status(dev, status);
 
 	if ((retval = nc_register_read(dev, REG_USBCTL, vp)) < 0) {
-		netdev_dbg(dev->net, "can't read USBCTL, %d\n", retval);
+		dbg("can't read USBCTL, %d", retval);
 		goto done;
 	}
 	usbctl = *vp;
@@ -315,7 +318,7 @@ static int net1080_reset(struct usbnet *dev)
 			USBCTL_FLUSH_THIS | USBCTL_FLUSH_OTHER);
 
 	if ((retval = nc_register_read(dev, REG_TTL, vp)) < 0) {
-		netdev_dbg(dev->net, "can't read TTL, %d\n", retval);
+		dbg("can't read TTL, %d", retval);
 		goto done;
 	}
 	ttl = *vp;
@@ -323,7 +326,7 @@ static int net1080_reset(struct usbnet *dev)
 
 	nc_register_write(dev, REG_TTL,
 			MK_TTL(NC_READ_TTL_MS, TTL_OTHER(ttl)) );
-	netdev_dbg(dev->net, "assigned TTL, %d ms\n", NC_READ_TTL_MS);
+	dbg("%s: assigned TTL, %d ms", dev->net->name, NC_READ_TTL_MS);
 
 	netif_info(dev, link, dev->net, "port %c, peer %sconnected\n",
 		   (status & STATUS_PORT_A) ? 'A' : 'B',
@@ -347,7 +350,7 @@ static int net1080_check_connect(struct usbnet *dev)
 	status = *vp;
 	kfree(vp);
 	if (retval != 0) {
-		netdev_dbg(dev->net, "net1080_check_conn read - %d\n", retval);
+		dbg("%s net1080_check_conn read - %d", dev->net->name, retval);
 		return retval;
 	}
 	if ((status & STATUS_CONN_OTHER) != STATUS_CONN_OTHER)
@@ -417,9 +420,11 @@ static int net1080_rx_fixup(struct usbnet *dev, struct sk_buff *skb)
 	u16			hdr_len, packet_len;
 
 	if (!(skb->len & 0x01)) {
-		netdev_dbg(dev->net, "rx framesize %d range %d..%d mtu %d\n",
-			   skb->len, dev->net->hard_header_len, dev->hard_mtu,
-			   dev->net->mtu);
+#ifdef DEBUG
+		struct net_device	*net = dev->net;
+		dbg("rx framesize %d range %d..%d mtu %d", skb->len,
+			net->hard_header_len, dev->hard_mtu, net->mtu);
+#endif
 		dev->net->stats.rx_frame_errors++;
 		nc_ensure_sync(dev);
 		return 0;
@@ -430,17 +435,17 @@ static int net1080_rx_fixup(struct usbnet *dev, struct sk_buff *skb)
 	packet_len = le16_to_cpup(&header->packet_len);
 	if (FRAMED_SIZE(packet_len) > NC_MAX_PACKET) {
 		dev->net->stats.rx_frame_errors++;
-		netdev_dbg(dev->net, "packet too big, %d\n", packet_len);
+		dbg("packet too big, %d", packet_len);
 		nc_ensure_sync(dev);
 		return 0;
 	} else if (hdr_len < MIN_HEADER) {
 		dev->net->stats.rx_frame_errors++;
-		netdev_dbg(dev->net, "header too short, %d\n", hdr_len);
+		dbg("header too short, %d", hdr_len);
 		nc_ensure_sync(dev);
 		return 0;
 	} else if (hdr_len > MIN_HEADER) {
 		// out of band data for us?
-		netdev_dbg(dev->net, "header OOB, %d bytes\n", hdr_len - MIN_HEADER);
+		dbg("header OOB, %d bytes", hdr_len - MIN_HEADER);
 		nc_ensure_sync(dev);
 		// switch (vendor/product ids) { ... }
 	}
@@ -453,23 +458,23 @@ static int net1080_rx_fixup(struct usbnet *dev, struct sk_buff *skb)
 	if ((packet_len & 0x01) == 0) {
 		if (skb->data [packet_len] != PAD_BYTE) {
 			dev->net->stats.rx_frame_errors++;
-			netdev_dbg(dev->net, "bad pad\n");
+			dbg("bad pad");
 			return 0;
 		}
 		skb_trim(skb, skb->len - 1);
 	}
 	if (skb->len != packet_len) {
 		dev->net->stats.rx_frame_errors++;
-		netdev_dbg(dev->net, "bad packet len %d (expected %d)\n",
-			   skb->len, packet_len);
+		dbg("bad packet len %d (expected %d)",
+			skb->len, packet_len);
 		nc_ensure_sync(dev);
 		return 0;
 	}
 	if (header->packet_id != get_unaligned(&trailer->packet_id)) {
 		dev->net->stats.rx_fifo_errors++;
-		netdev_dbg(dev->net, "(2+ dropped) rx packet_id mismatch 0x%x 0x%x\n",
-			   le16_to_cpu(header->packet_id),
-			   le16_to_cpu(trailer->packet_id));
+		dbg("(2+ dropped) rx packet_id mismatch 0x%x 0x%x",
+			le16_to_cpu(header->packet_id),
+			le16_to_cpu(trailer->packet_id));
 		return 0;
 	}
 #if 0

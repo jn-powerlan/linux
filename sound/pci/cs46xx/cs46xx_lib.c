@@ -2797,7 +2797,7 @@ static int snd_cs46xx_free(struct snd_cs46xx *chip)
 	}
 #endif
 	
-#ifdef CONFIG_PM_SLEEP
+#ifdef CONFIG_PM
 	kfree(chip->saved_regs);
 #endif
 
@@ -3590,7 +3590,7 @@ static struct cs_card_type __devinitdata cards[] = {
 /*
  * APM support
  */
-#ifdef CONFIG_PM_SLEEP
+#ifdef CONFIG_PM
 static unsigned int saved_regs[] = {
 	BA0_ACOSV,
 	/*BA0_ASER_FADDR,*/
@@ -3711,7 +3711,7 @@ static int snd_cs46xx_resume(struct device *dev)
 }
 
 SIMPLE_DEV_PM_OPS(snd_cs46xx_pm, snd_cs46xx_suspend, snd_cs46xx_resume);
-#endif /* CONFIG_PM_SLEEP */
+#endif /* CONFIG_PM */
 
 
 /*
@@ -3868,7 +3868,7 @@ int __devinit snd_cs46xx_create(struct snd_card *card,
 	
 	snd_cs46xx_proc_init(card, chip);
 
-#ifdef CONFIG_PM_SLEEP
+#ifdef CONFIG_PM
 	chip->saved_regs = kmalloc(sizeof(*chip->saved_regs) *
 				   ARRAY_SIZE(saved_regs), GFP_KERNEL);
 	if (!chip->saved_regs) {

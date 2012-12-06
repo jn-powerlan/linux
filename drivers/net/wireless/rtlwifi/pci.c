@@ -372,11 +372,13 @@ static void rtl_pci_parse_configuration(struct pci_dev *pdev,
 	struct rtl_pci_priv *pcipriv = rtl_pcipriv(hw);
 
 	u8 tmp;
-	u16 linkctrl_reg;
+	int pos;
+	u8 linkctrl_reg;
 
 	/*Link Control Register */
-	pcie_capability_read_word(pdev, PCI_EXP_LNKCTL, &linkctrl_reg);
-	pcipriv->ndis_adapter.linkctrl_reg = (u8)linkctrl_reg;
+	pos = pci_pcie_cap(pdev);
+	pci_read_config_byte(pdev, pos + PCI_EXP_LNKCTL, &linkctrl_reg);
+	pcipriv->ndis_adapter.linkctrl_reg = linkctrl_reg;
 
 	RT_TRACE(rtlpriv, COMP_INIT, DBG_TRACE, "Link Control Register =%x\n",
 		 pcipriv->ndis_adapter.linkctrl_reg);
@@ -502,7 +504,7 @@ static void _rtl_pci_tx_chk_waitq(struct ieee80211_hw *hw)
 				_rtl_update_earlymode_info(hw, skb,
 							   &tcb_desc, tid);
 
-			rtlpriv->intf_ops->adapter_tx(hw, NULL, skb, &tcb_desc);
+			rtlpriv->intf_ops->adapter_tx(hw, skb, &tcb_desc);
 		}
 	}
 }
@@ -927,7 +929,7 @@ static void _rtl_pci_prepare_bcn_tasklet(struct ieee80211_hw *hw)
 	info = IEEE80211_SKB_CB(pskb);
 	pdesc = &ring->desc[0];
 	rtlpriv->cfg->ops->fill_tx_desc(hw, hdr, (u8 *) pdesc,
-		info, NULL, pskb, BEACON_QUEUE, &tcb_desc);
+		info, pskb, BEACON_QUEUE, &tcb_desc);
 
 	__skb_queue_tail(&ring->queue, pskb);
 
@@ -1303,10 +1305,11 @@ int rtl_pci_reset_trx_ring(struct ieee80211_hw *hw)
 }
 
 static bool rtl_pci_tx_chk_waitq_insert(struct ieee80211_hw *hw,
-					struct ieee80211_sta *sta,
 					struct sk_buff *skb)
 {
 	struct rtl_priv *rtlpriv = rtl_priv(hw);
+	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
+	struct ieee80211_sta *sta = info->control.sta;
 	struct rtl_sta_info *sta_entry = NULL;
 	u8 tid = rtl_get_tid(skb);
 
@@ -1334,14 +1337,13 @@ static bool rtl_pci_tx_chk_waitq_insert(struct ieee80211_hw *hw,
 	return true;
 }
 
-static int rtl_pci_tx(struct ieee80211_hw *hw,
-		      struct ieee80211_sta *sta,
-		      struct sk_buff *skb,
-		      struct rtl_tcb_desc *ptcb_desc)
+static int rtl_pci_tx(struct ieee80211_hw *hw, struct sk_buff *skb,
+		struct rtl_tcb_desc *ptcb_desc)
 {
 	struct rtl_priv *rtlpriv = rtl_priv(hw);
 	struct rtl_sta_info *sta_entry = NULL;
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
+	struct ieee80211_sta *sta = info->control.sta;
 	struct rtl8192_tx_ring *ring;
 	struct rtl_tx_desc *pdesc;
 	u8 idx;
@@ -1416,7 +1418,7 @@ static int rtl_pci_tx(struct ieee80211_hw *hw,
 		rtlpriv->cfg->ops->led_control(hw, LED_CTL_TX);
 
 	rtlpriv->cfg->ops->fill_tx_desc(hw, hdr, (u8 *)pdesc,
-			info, sta, skb, hw_queue, ptcb_desc);
+			info, skb, hw_queue, ptcb_desc);
 
 	__skb_queue_tail(&ring->queue, skb);
 

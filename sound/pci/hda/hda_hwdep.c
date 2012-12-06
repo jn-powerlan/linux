@@ -25,6 +25,7 @@
 #include <linux/mutex.h>
 #include <linux/ctype.h>
 #include <linux/string.h>
+#include <linux/firmware.h>
 #include <linux/export.h>
 #include <sound/core.h>
 #include "hda_codec.h"
@@ -155,7 +156,7 @@ int /*__devinit*/ snd_hda_create_hwdep(struct hda_codec *codec)
 	return 0;
 }
 
-#ifdef CONFIG_PM
+#ifdef CONFIG_SND_HDA_POWER_SAVE
 static ssize_t power_on_acct_show(struct device *dev,
 				  struct device_attribute *attr,
 				  char *buf)
@@ -191,7 +192,7 @@ int snd_hda_hwdep_add_power_sysfs(struct hda_codec *codec)
 					  hwdep->device, &power_attrs[i]);
 	return 0;
 }
-#endif /* CONFIG_PM */
+#endif /* CONFIG_SND_HDA_POWER_SAVE */
 
 #ifdef CONFIG_SND_HDA_RECONFIG
 
@@ -746,21 +747,18 @@ static int parse_line_mode(char *buf, struct hda_bus *bus)
  *
  * the spaces at the beginning and the end of the line are stripped
  */
-static int get_line_from_fw(char *buf, int size, size_t *fw_size_p,
-			    const void **fw_data_p)
+static int get_line_from_fw(char *buf, int size, struct firmware *fw)
 {
 	int len;
-	size_t fw_size = *fw_size_p;
-	const char *p = *fw_data_p;
-
-	while (isspace(*p) && fw_size) {
+	const char *p = fw->data;
+	while (isspace(*p) && fw->size) {
 		p++;
-		fw_size--;
+		fw->size--;
 	}
-	if (!fw_size)
+	if (!fw->size)
 		return 0;
 
-	for (len = 0; len < fw_size; len++) {
+	for (len = 0; len < fw->size; len++) {
 		if (!*p)
 			break;
 		if (*p == '\n') {
@@ -772,8 +770,8 @@ static int get_line_from_fw(char *buf, int size, size_t *fw_size_p,
 			*buf++ = *p++;
 	}
 	*buf = 0;
-	*fw_size_p = fw_size - len;
-	*fw_data_p = p;
+	fw->size -= len;
+	fw->data = p;
 	remove_trail_spaces(buf);
 	return 1;
 }
@@ -781,15 +779,29 @@ static int get_line_from_fw(char *buf, int size, size_t *fw_size_p,
 /*
  * load a "patch" firmware file and parse it
  */
-int snd_hda_load_patch(struct hda_bus *bus, size_t fw_size, const void *fw_buf)
+int snd_hda_load_patch(struct hda_bus *bus, const char *patch)
 {
+	int err;
+	const struct firmware *fw;
+	struct firmware tmp;
 	char buf[128];
 	struct hda_codec *codec;
 	int line_mode;
+	struct device *dev = bus->card->dev;
 
+	if (snd_BUG_ON(!dev))
+		return -ENODEV;
+	err = request_firmware(&fw, patch, dev);
+	if (err < 0) {
+		printk(KERN_ERR "hda-codec: Cannot load the patch '%s'\n",
+		       patch);
+		return err;
+	}
+
+	tmp = *fw;
 	line_mode = LINE_MODE_NONE;
 	codec = NULL;
-	while (get_line_from_fw(buf, sizeof(buf) - 1, &fw_size, &fw_buf)) {
+	while (get_line_from_fw(buf, sizeof(buf) - 1, &tmp)) {
 		if (!*buf || *buf == '#' || *buf == '\n')
 			continue;
 		if (*buf == '[')
@@ -798,6 +810,7 @@ int snd_hda_load_patch(struct hda_bus *bus, size_t fw_size, const void *fw_buf)
 			 (codec || !patch_items[line_mode].need_codec))
 			patch_items[line_mode].parser(buf, bus, &codec);
 	}
+	release_firmware(fw);
 	return 0;
 }
 EXPORT_SYMBOL_HDA(snd_hda_load_patch);

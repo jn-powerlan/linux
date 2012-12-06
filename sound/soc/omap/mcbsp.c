@@ -24,11 +24,8 @@
 #include <linux/delay.h>
 #include <linux/io.h>
 #include <linux/slab.h>
-#include <linux/pm_runtime.h>
 
-#include <linux/platform_data/asoc-ti-mcbsp.h>
-
-#include <plat/cpu.h>
+#include <plat/mcbsp.h>
 
 #include "mcbsp.h"
 
@@ -729,39 +726,50 @@ void omap_mcbsp_stop(struct omap_mcbsp *mcbsp, int tx, int rx)
 
 int omap2_mcbsp_set_clks_src(struct omap_mcbsp *mcbsp, u8 fck_src_id)
 {
-	struct clk *fck_src;
 	const char *src;
-	int r;
 
 	if (fck_src_id == MCBSP_CLKS_PAD_SRC)
-		src = "pad_fck";
+		src = "clks_ext";
 	else if (fck_src_id == MCBSP_CLKS_PRCM_SRC)
-		src = "prcm_fck";
+		src = "clks_fclk";
 	else
 		return -EINVAL;
 
-	fck_src = clk_get(mcbsp->dev, src);
-	if (IS_ERR(fck_src)) {
-		dev_err(mcbsp->dev, "CLKS: could not clk_get() %s\n", src);
+	if (mcbsp->pdata->set_clk_src)
+		return mcbsp->pdata->set_clk_src(mcbsp->dev, mcbsp->fclk, src);
+	else
+		return -EINVAL;
+}
+
+int omap_mcbsp_6pin_src_mux(struct omap_mcbsp *mcbsp, u8 mux)
+{
+	const char *signal, *src;
+
+	if (!mcbsp->pdata->mux_signal)
+		return -EINVAL;
+
+	switch (mux) {
+	case CLKR_SRC_CLKR:
+		signal = "clkr";
+		src = "clkr";
+		break;
+	case CLKR_SRC_CLKX:
+		signal = "clkr";
+		src = "clkx";
+		break;
+	case FSR_SRC_FSR:
+		signal = "fsr";
+		src = "fsr";
+		break;
+	case FSR_SRC_FSX:
+		signal = "fsr";
+		src = "fsx";
+		break;
+	default:
 		return -EINVAL;
 	}
 
-	pm_runtime_put_sync(mcbsp->dev);
-
-	r = clk_set_parent(mcbsp->fclk, fck_src);
-	if (r) {
-		dev_err(mcbsp->dev, "CLKS: could not clk_set_parent() to %s\n",
-			src);
-		clk_put(fck_src);
-		return r;
-	}
-
-	pm_runtime_get_sync(mcbsp->dev);
-
-	clk_put(fck_src);
-
-	return 0;
-
+	return mcbsp->pdata->mux_signal(mcbsp->dev, signal, src);
 }
 
 #define max_thres(m)			(mcbsp->pdata->buffer_size)

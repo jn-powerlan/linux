@@ -27,7 +27,7 @@
 
 #include <mach/regs-sdi.h>
 
-#include <linux/platform_data/mmc-s3cmci.h>
+#include <plat/mci.h>
 
 #include "s3cmci.h"
 

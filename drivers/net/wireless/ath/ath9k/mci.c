@@ -80,7 +80,6 @@ void ath_mci_flush_profile(struct ath_mci_profile *mci)
 	struct ath_mci_profile_info *info, *tinfo;
 
 	mci->aggr_limit = 0;
-	mci->num_mgmt = 0;
 
 	if (list_empty(&mci->info))
 		return;
@@ -121,14 +120,7 @@ static void ath_mci_update_scheme(struct ath_softc *sc)
 	if (mci_hw->config & ATH_MCI_CONFIG_DISABLE_TUNING)
 		goto skip_tuning;
 
-	mci->aggr_limit = 0;
 	btcoex->duty_cycle = ath_mci_duty_cycle[num_profile];
-	btcoex->btcoex_period = ATH_MCI_DEF_BT_PERIOD;
-	if (NUM_PROF(mci))
-		btcoex->bt_stomp_type = ATH_BTCOEX_STOMP_LOW;
-	else
-		btcoex->bt_stomp_type = mci->num_mgmt ? ATH_BTCOEX_STOMP_ALL :
-							ATH_BTCOEX_STOMP_LOW;
 
 	if (num_profile == 1) {
 		info = list_first_entry(&mci->info,
@@ -140,8 +132,7 @@ static void ath_mci_update_scheme(struct ath_softc *sc)
 			else if (info->T == 6) {
 				mci->aggr_limit = 6;
 				btcoex->duty_cycle = 30;
-			} else
-				mci->aggr_limit = 6;
+			}
 			ath_dbg(common, MCI,
 				"Single SCO, aggregation limit %d 1/4 ms\n",
 				mci->aggr_limit);
@@ -200,23 +191,6 @@ skip_tuning:
 	ath9k_btcoex_timer_resume(sc);
 }
 
-static void ath_mci_wait_btcal_done(struct ath_softc *sc)
-{
-	struct ath_hw *ah = sc->sc_ah;
-
-	/* Stop tx & rx */
-	ieee80211_stop_queues(sc->hw);
-	ath_stoprecv(sc);
-	ath_drain_all_txq(sc, false);
-
-	/* Wait for cal done */
-	ar9003_mci_start_reset(ah, ah->curchan);
-
-	/* Resume tx & rx */
-	ath_startrecv(sc);
-	ieee80211_wake_queues(sc->hw);
-}
-
 static void ath_mci_cal_msg(struct ath_softc *sc, u8 opcode, u8 *rx_payload)
 {
 	struct ath_hw *ah = sc->sc_ah;
@@ -227,8 +201,8 @@ static void ath_mci_cal_msg(struct ath_softc *sc, u8 opcode, u8 *rx_payload)
 	switch (opcode) {
 	case MCI_GPM_BT_CAL_REQ:
 		if (mci_hw->bt_state == MCI_BT_AWAKE) {
-			mci_hw->bt_state = MCI_BT_CAL_START;
-			ath_mci_wait_btcal_done(sc);
+			ar9003_mci_state(ah, MCI_STATE_SET_BT_CAL_START);
+			ath9k_queue_reset(sc, RESET_TYPE_MCI);
 		}
 		ath_dbg(common, MCI, "MCI State : %d\n", mci_hw->bt_state);
 		break;
@@ -250,8 +224,8 @@ static void ath9k_mci_work(struct work_struct *work)
 	ath_mci_update_scheme(sc);
 }
 
-static u8 ath_mci_process_profile(struct ath_softc *sc,
-				  struct ath_mci_profile_info *info)
+static void ath_mci_process_profile(struct ath_softc *sc,
+				    struct ath_mci_profile_info *info)
 {
 	struct ath_common *common = ath9k_hw_common(sc->sc_ah);
 	struct ath_btcoex *btcoex = &sc->btcoex;
@@ -277,15 +251,25 @@ static u8 ath_mci_process_profile(struct ath_softc *sc,
 
 	if (info->start) {
 		if (!entry && !ath_mci_add_profile(common, mci, info))
-			return 0;
+			return;
 	} else
 		ath_mci_del_profile(common, mci, entry);
 
-	return 1;
+	btcoex->btcoex_period = ATH_MCI_DEF_BT_PERIOD;
+	mci->aggr_limit = mci->num_sco ? 6 : 0;
+
+	btcoex->duty_cycle = ath_mci_duty_cycle[NUM_PROF(mci)];
+	if (NUM_PROF(mci))
+		btcoex->bt_stomp_type = ATH_BTCOEX_STOMP_LOW;
+	else
+		btcoex->bt_stomp_type = mci->num_mgmt ? ATH_BTCOEX_STOMP_ALL :
+							ATH_BTCOEX_STOMP_LOW;
+
+	ieee80211_queue_work(sc->hw, &sc->mci_work);
 }
 
-static u8 ath_mci_process_status(struct ath_softc *sc,
-				 struct ath_mci_profile_status *status)
+static void ath_mci_process_status(struct ath_softc *sc,
+				   struct ath_mci_profile_status *status)
 {
 	struct ath_btcoex *btcoex = &sc->btcoex;
 	struct ath_mci_profile *mci = &btcoex->mci;
@@ -294,14 +278,14 @@ static u8 ath_mci_process_status(struct ath_softc *sc,
 
 	/* Link status type are not handled */
 	if (status->is_link)
-		return 0;
+		return;
 
 	info.conn_handle = status->conn_handle;
 	if (ath_mci_find_profile(mci, &info))
-		return 0;
+		return;
 
 	if (status->conn_handle >= ATH_MCI_MAX_PROFILE)
-		return 0;
+		return;
 
 	if (status->is_critical)
 		__set_bit(status->conn_handle, mci->status);
@@ -315,9 +299,7 @@ static u8 ath_mci_process_status(struct ath_softc *sc,
 	} while (++i < ATH_MCI_MAX_PROFILE);
 
 	if (old_num_mgmt != mci->num_mgmt)
-		return 1;
-
-	return 0;
+		ieee80211_queue_work(sc->hw, &sc->mci_work);
 }
 
 static void ath_mci_msg(struct ath_softc *sc, u8 opcode, u8 *rx_payload)
@@ -326,15 +308,8 @@ static void ath_mci_msg(struct ath_softc *sc, u8 opcode, u8 *rx_payload)
 	struct ath_mci_profile_info profile_info;
 	struct ath_mci_profile_status profile_status;
 	struct ath_common *common = ath9k_hw_common(sc->sc_ah);
-	u8 major, minor, update_scheme = 0;
+	u8 major, minor;
 	u32 seq_num;
-
-	if (ar9003_mci_state(ah, MCI_STATE_NEED_FLUSH_BT_INFO) &&
-	    ar9003_mci_state(ah, MCI_STATE_ENABLE)) {
-		ath_dbg(common, MCI, "(MCI) Need to flush BT profiles\n");
-		ath_mci_flush_profile(&sc->btcoex.mci);
-		ar9003_mci_state(ah, MCI_STATE_SEND_STATUS_QUERY);
-	}
 
 	switch (opcode) {
 	case MCI_GPM_COEX_VERSION_QUERY:
@@ -361,7 +336,7 @@ static void ath_mci_msg(struct ath_softc *sc, u8 opcode, u8 *rx_payload)
 			break;
 		}
 
-		update_scheme += ath_mci_process_profile(sc, &profile_info);
+		ath_mci_process_profile(sc, &profile_info);
 		break;
 	case MCI_GPM_COEX_BT_STATUS_UPDATE:
 		profile_status.is_link = *(rx_payload +
@@ -377,14 +352,12 @@ static void ath_mci_msg(struct ath_softc *sc, u8 opcode, u8 *rx_payload)
 			profile_status.is_link, profile_status.conn_handle,
 			profile_status.is_critical, seq_num);
 
-		update_scheme += ath_mci_process_status(sc, &profile_status);
+		ath_mci_process_status(sc, &profile_status);
 		break;
 	default:
 		ath_dbg(common, MCI, "Unknown GPM COEX message = 0x%02x\n", opcode);
 		break;
 	}
-	if (update_scheme)
-		ieee80211_queue_work(sc->hw, &sc->mci_work);
 }
 
 int ath_mci_setup(struct ath_softc *sc)
@@ -392,7 +365,6 @@ int ath_mci_setup(struct ath_softc *sc)
 	struct ath_common *common = ath9k_hw_common(sc->sc_ah);
 	struct ath_mci_coex *mci = &sc->mci_coex;
 	struct ath_mci_buf *buf = &mci->sched_buf;
-	int ret;
 
 	buf->bf_addr = dma_alloc_coherent(sc->dev,
 				  ATH_MCI_SCHED_BUF_SIZE + ATH_MCI_GPM_BUF_SIZE,
@@ -412,13 +384,9 @@ int ath_mci_setup(struct ath_softc *sc)
 	mci->gpm_buf.bf_addr = (u8 *)mci->sched_buf.bf_addr + mci->sched_buf.bf_len;
 	mci->gpm_buf.bf_paddr = mci->sched_buf.bf_paddr + mci->sched_buf.bf_len;
 
-	ret = ar9003_mci_setup(sc->sc_ah, mci->gpm_buf.bf_paddr,
-			       mci->gpm_buf.bf_addr, (mci->gpm_buf.bf_len >> 4),
-			       mci->sched_buf.bf_paddr);
-	if (ret) {
-		ath_err(common, "Failed to initialize MCI\n");
-		return ret;
-	}
+	ar9003_mci_setup(sc->sc_ah, mci->gpm_buf.bf_paddr,
+			 mci->gpm_buf.bf_addr, (mci->gpm_buf.bf_len >> 4),
+			 mci->sched_buf.bf_paddr);
 
 	INIT_WORK(&sc->mci_work, ath9k_mci_work);
 	ath_dbg(common, MCI, "MCI Initialized\n");
@@ -583,11 +551,9 @@ void ath_mci_intr(struct ath_softc *sc)
 	}
 
 	if ((mci_int & AR_MCI_INTERRUPT_RX_INVALID_HDR) ||
-	    (mci_int & AR_MCI_INTERRUPT_CONT_INFO_TIMEOUT)) {
+	    (mci_int & AR_MCI_INTERRUPT_CONT_INFO_TIMEOUT))
 		mci_int &= ~(AR_MCI_INTERRUPT_RX_INVALID_HDR |
 			     AR_MCI_INTERRUPT_CONT_INFO_TIMEOUT);
-		ath_mci_msg(sc, MCI_GPM_COEX_NOOP, NULL);
-	}
 }
 
 void ath_mci_enable(struct ath_softc *sc)

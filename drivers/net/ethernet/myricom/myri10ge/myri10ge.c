@@ -1078,16 +1078,22 @@ static int myri10ge_reset(struct myri10ge_priv *mgp)
 #ifdef CONFIG_MYRI10GE_DCA
 static int myri10ge_toggle_relaxed(struct pci_dev *pdev, int on)
 {
-	int ret;
+	int ret, cap, err;
 	u16 ctl;
 
-	pcie_capability_read_word(pdev, PCI_EXP_DEVCTL, &ctl);
+	cap = pci_pcie_cap(pdev);
+	if (!cap)
+		return 0;
+
+	err = pci_read_config_word(pdev, cap + PCI_EXP_DEVCTL, &ctl);
+	if (err)
+		return 0;
 
 	ret = (ctl & PCI_EXP_DEVCTL_RELAX_EN) >> 4;
 	if (ret != on) {
 		ctl &= ~PCI_EXP_DEVCTL_RELAX_EN;
 		ctl |= (on << 4);
-		pcie_capability_write_word(pdev, PCI_EXP_DEVCTL, ctl);
+		pci_write_config_word(pdev, cap + PCI_EXP_DEVCTL, ctl);
 	}
 	return ret;
 }
@@ -3186,13 +3192,18 @@ static void myri10ge_enable_ecrc(struct myri10ge_priv *mgp)
 	struct device *dev = &mgp->pdev->dev;
 	int cap;
 	unsigned err_cap;
+	u16 val;
+	u8 ext_type;
 	int ret;
 
 	if (!myri10ge_ecrc_enable || !bridge)
 		return;
 
 	/* check that the bridge is a root port */
-	if (pci_pcie_type(bridge) != PCI_EXP_TYPE_ROOT_PORT) {
+	cap = pci_pcie_cap(bridge);
+	pci_read_config_word(bridge, cap + PCI_CAP_FLAGS, &val);
+	ext_type = (val & PCI_EXP_FLAGS_TYPE) >> 4;
+	if (ext_type != PCI_EXP_TYPE_ROOT_PORT) {
 		if (myri10ge_ecrc_enable > 1) {
 			struct pci_dev *prev_bridge, *old_bridge = bridge;
 
@@ -3207,8 +3218,11 @@ static void myri10ge_enable_ecrc(struct myri10ge_priv *mgp)
 						" to force ECRC\n");
 					return;
 				}
-			} while (pci_pcie_type(bridge) !=
-				 PCI_EXP_TYPE_ROOT_PORT);
+				cap = pci_pcie_cap(bridge);
+				pci_read_config_word(bridge,
+						     cap + PCI_CAP_FLAGS, &val);
+				ext_type = (val & PCI_EXP_FLAGS_TYPE) >> 4;
+			} while (ext_type != PCI_EXP_TYPE_ROOT_PORT);
 
 			dev_info(dev,
 				 "Forcing ECRC on non-root port %s"
@@ -3321,10 +3335,11 @@ static void myri10ge_select_firmware(struct myri10ge_priv *mgp)
 	int overridden = 0;
 
 	if (myri10ge_force_firmware == 0) {
-		int link_width;
+		int link_width, exp_cap;
 		u16 lnk;
 
-		pcie_capability_read_word(mgp->pdev, PCI_EXP_LNKSTA, &lnk);
+		exp_cap = pci_pcie_cap(mgp->pdev);
+		pci_read_config_word(mgp->pdev, exp_cap + PCI_EXP_LNKSTA, &lnk);
 		link_width = (lnk >> 4) & 0x3f;
 
 		/* Check to see if Link is less than 8 or if the

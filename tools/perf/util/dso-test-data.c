@@ -23,7 +23,7 @@ static char *test_file(int size)
 	int fd, i;
 	unsigned char *buf;
 
-	fd = mkstemp(templ);
+	fd = mkostemp(templ, O_CREAT|O_WRONLY|O_TRUNC);
 
 	buf = malloc(size);
 	if (!buf) {

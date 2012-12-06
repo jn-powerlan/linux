@@ -97,9 +97,9 @@ struct __large_struct { unsigned long buf[100]; };
 })
 
 #ifdef CONFIG_SUPERH32
-# include <asm/uaccess_32.h>
+# include "uaccess_32.h"
 #else
-# include <asm/uaccess_64.h>
+# include "uaccess_64.h"
 #endif
 
 extern long strncpy_from_user(char *dest, const char __user *src, long count);

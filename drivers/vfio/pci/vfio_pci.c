@@ -408,7 +408,7 @@ static int vfio_pci_mmap(void *device_data, struct vm_area_struct *vma)
 	struct vfio_pci_device *vdev = device_data;
 	struct pci_dev *pdev = vdev->pdev;
 	unsigned int index;
-	u64 phys_len, req_len, pgoff, req_start;
+	u64 phys_len, req_len, pgoff, req_start, phys;
 	int ret;
 
 	index = vma->vm_pgoff >> (VFIO_PCI_OFFSET_SHIFT - PAGE_SHIFT);
@@ -461,11 +461,12 @@ static int vfio_pci_mmap(void *device_data, struct vm_area_struct *vma)
 	}
 
 	vma->vm_private_data = vdev;
-	vma->vm_flags |= VM_IO | VM_DONTEXPAND | VM_DONTDUMP;
+	vma->vm_flags |= (VM_IO | VM_RESERVED);
 	vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
-	vma->vm_pgoff = (pci_resource_start(pdev, index) >> PAGE_SHIFT) + pgoff;
 
-	return remap_pfn_range(vma, vma->vm_start, vma->vm_pgoff,
+	phys = (pci_resource_start(pdev, index) >> PAGE_SHIFT) + pgoff;
+
+	return remap_pfn_range(vma, vma->vm_start, phys,
 			       req_len, vma->vm_page_prot);
 }
 

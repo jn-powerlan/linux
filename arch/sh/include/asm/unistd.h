@@ -1,7 +1,8 @@
+#ifdef __KERNEL__
 # ifdef CONFIG_SUPERH32
-#  include <asm/unistd_32.h>
+#  include "unistd_32.h"
 # else
-#  include <asm/unistd_64.h>
+#  include "unistd_64.h"
 # endif
 
 # define __ARCH_WANT_SYS_RT_SIGSUSPEND
@@ -37,4 +38,10 @@
  */
 # define cond_syscall(x) asm(".weak\t" #x "\n\t.set\t" #x ",sys_ni_syscall")
 
-#include <uapi/asm/unistd.h>
+#else
+# ifdef __SH5__
+#  include "unistd_64.h"
+# else
+#  include "unistd_32.h"
+# endif
+#endif

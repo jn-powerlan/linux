@@ -166,7 +166,8 @@ static u32 asle_set_backlight(struct drm_device *dev, u32 bclp)
 
 	if (config_enabled(CONFIG_BACKLIGHT_CLASS_DEVICE)) {
 		int max = bd->props.max_brightness;
-		gma_backlight_set(dev, bclp * max / 255);
+		bd->props.brightness = bclp * max / 255;
+		backlight_update_status(bd);
 	}
 
 	asle->cblv = (bclp * 0x64) / 0xff | ASLE_CBLV_VALID;

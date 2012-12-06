@@ -77,7 +77,7 @@ static void wpadev_setup(struct net_device *dev)
 
 /*
  * Description:
- *      register netdev for wpa supplicant daemon
+ *      register netdev for wpa supplicant deamon
  *
  * Parameters:
  *  In:
@@ -164,7 +164,7 @@ static int wpa_release_wpadev(PSDevice pDevice)
 
 /*
  * Description:
- *      Set enable/disable dev for wpa supplicant daemon
+ *      Set enable/disable dev for wpa supplicant deamon
  *
  * Parameters:
  *  In:
@@ -847,7 +847,7 @@ else
           if(!bWepEnabled)  pDevice->eEncryptionStatus = Ndis802_11EncryptionDisabled;
 	else pDevice->eEncryptionStatus = Ndis802_11Encryption1Enabled;
             //pMgmt->eAuthenMode = WMAC_AUTH_OPEN;
-            //pMgmt->bShareKeyAlgorithm = false; //20080717-06,<Modify> by chester//Fix Open mode, WEP encryption
+            //pMgmt->bShareKeyAlgorithm = false; //20080717-06,<Modify> by chester//Fix Open mode, WEP encrytion
            }
 //mike save old encryption status
 	pDevice->eOldEncryptionStatus = pDevice->eEncryptionStatus;

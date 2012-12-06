@@ -131,19 +131,13 @@ asmlinkage long sys32_setresuid16(u16 ruid, u16 euid, u16 suid)
 		low2highuid(suid));
 }
 
-asmlinkage long sys32_getresuid16(u16 __user *ruidp, u16 __user *euidp, u16 __user *suidp)
+asmlinkage long sys32_getresuid16(u16 __user *ruid, u16 __user *euid, u16 __user *suid)
 {
-	const struct cred *cred = current_cred();
 	int retval;
-	u16 ruid, euid, suid;
 
-	ruid = high2lowuid(from_kuid_munged(cred->user_ns, cred->uid));
-	euid = high2lowuid(from_kuid_munged(cred->user_ns, cred->euid));
-	suid = high2lowuid(from_kuid_munged(cred->user_ns, cred->suid));
-
-	if (!(retval   = put_user(ruid, ruidp)) &&
-	    !(retval   = put_user(euid, euidp)))
-		retval = put_user(suid, suidp);
+	if (!(retval = put_user(high2lowuid(current->cred->uid), ruid)) &&
+	    !(retval = put_user(high2lowuid(current->cred->euid), euid)))
+		retval = put_user(high2lowuid(current->cred->suid), suid);
 
 	return retval;
 }
@@ -154,19 +148,13 @@ asmlinkage long sys32_setresgid16(u16 rgid, u16 egid, u16 sgid)
 		low2highgid(sgid));
 }
 
-asmlinkage long sys32_getresgid16(u16 __user *rgidp, u16 __user *egidp, u16 __user *sgidp)
+asmlinkage long sys32_getresgid16(u16 __user *rgid, u16 __user *egid, u16 __user *sgid)
 {
-	const struct cred *cred = current_cred();
 	int retval;
-	u16 rgid, egid, sgid;
 
-	rgid = high2lowgid(from_kgid_munged(cred->user_ns, cred->gid));
-	egid = high2lowgid(from_kgid_munged(cred->user_ns, cred->egid));
-	sgid = high2lowgid(from_kgid_munged(cred->user_ns, cred->sgid));
-
-	if (!(retval   = put_user(rgid, rgidp)) &&
-	    !(retval   = put_user(egid, egidp)))
-		retval = put_user(sgid, sgidp);
+	if (!(retval = put_user(high2lowgid(current->cred->gid), rgid)) &&
+	    !(retval = put_user(high2lowgid(current->cred->egid), egid)))
+		retval = put_user(high2lowgid(current->cred->sgid), sgid);
 
 	return retval;
 }
@@ -270,22 +258,22 @@ asmlinkage long sys32_setgroups16(int gidsetsize, u16 __user *grouplist)
 
 asmlinkage long sys32_getuid16(void)
 {
-	return high2lowuid(from_kuid_munged(current_user_ns(), current_uid()));
+	return high2lowuid(current->cred->uid);
 }
 
 asmlinkage long sys32_geteuid16(void)
 {
-	return high2lowuid(from_kuid_munged(current_user_ns(), current_euid()));
+	return high2lowuid(current->cred->euid);
 }
 
 asmlinkage long sys32_getgid16(void)
 {
-	return high2lowgid(from_kgid_munged(current_user_ns(), current_gid()));
+	return high2lowgid(current->cred->gid);
 }
 
 asmlinkage long sys32_getegid16(void)
 {
-	return high2lowgid(from_kgid_munged(current_user_ns(), current_egid()));
+	return high2lowgid(current->cred->egid);
 }
 
 /*
@@ -430,6 +418,32 @@ sys32_rt_sigqueueinfo(int pid, int sig, compat_siginfo_t __user *uinfo)
 	ret = sys_rt_sigqueueinfo(pid, sig, (siginfo_t __force __user *) &info);
 	set_fs (old_fs);
 	return ret;
+}
+
+/*
+ * sys32_execve() executes a new program after the asm stub has set
+ * things up for us.  This should basically do what I want it to.
+ */
+asmlinkage long sys32_execve(const char __user *name, compat_uptr_t __user *argv,
+			     compat_uptr_t __user *envp)
+{
+	struct pt_regs *regs = task_pt_regs(current);
+	char *filename;
+	long rc;
+
+	filename = getname(name);
+	rc = PTR_ERR(filename);
+	if (IS_ERR(filename))
+		return rc;
+	rc = compat_do_execve(filename, argv, envp, regs);
+	if (rc)
+		goto out;
+	current->thread.fp_regs.fpc=0;
+	asm volatile("sfpc %0,0" : : "d" (0));
+	rc = regs->gprs[2];
+out:
+	putname(filename);
+	return rc;
 }
 
 asmlinkage long sys32_pread64(unsigned int fd, char __user *ubuf,

@@ -85,7 +85,7 @@ static int timbradio_vidioc_g_audio(struct file *file, void *priv,
 }
 
 static int timbradio_vidioc_s_audio(struct file *file, void *priv,
-	const struct v4l2_audio *a)
+	struct v4l2_audio *a)
 {
 	return a->index ? -EINVAL : 0;
 }
@@ -157,7 +157,7 @@ static int __devinit timbradio_probe(struct platform_device *pdev)
 		goto err;
 	}
 
-	tr = devm_kzalloc(&pdev->dev, sizeof(*tr), GFP_KERNEL);
+	tr = kzalloc(sizeof(*tr), GFP_KERNEL);
 	if (!tr) {
 		err = -ENOMEM;
 		goto err;
@@ -177,7 +177,7 @@ static int __devinit timbradio_probe(struct platform_device *pdev)
 	strlcpy(tr->v4l2_dev.name, DRIVER_NAME, sizeof(tr->v4l2_dev.name));
 	err = v4l2_device_register(NULL, &tr->v4l2_dev);
 	if (err)
-		goto err;
+		goto err_v4l2_dev;
 
 	tr->video_dev.v4l2_dev = &tr->v4l2_dev;
 
@@ -195,6 +195,8 @@ static int __devinit timbradio_probe(struct platform_device *pdev)
 err_video_req:
 	video_device_release_empty(&tr->video_dev);
 	v4l2_device_unregister(&tr->v4l2_dev);
+err_v4l2_dev:
+	kfree(tr);
 err:
 	dev_err(&pdev->dev, "Failed to register: %d\n", err);
 
@@ -209,6 +211,8 @@ static int __devexit timbradio_remove(struct platform_device *pdev)
 	video_device_release_empty(&tr->video_dev);
 
 	v4l2_device_unregister(&tr->v4l2_dev);
+
+	kfree(tr);
 
 	return 0;
 }

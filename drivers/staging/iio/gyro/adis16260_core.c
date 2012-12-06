@@ -498,33 +498,28 @@ static int adis16260_read_raw(struct iio_dev *indio_dev,
 		switch (chan->type) {
 		case IIO_ANGL_VEL:
 			*val = 0;
-			if (spi_get_device_id(st->us)->driver_data) {
-				/* 0.01832 degree / sec */
-				*val2 = IIO_DEGREE_TO_RAD(18320);
-			} else {
-				/* 0.07326 degree / sec */
-				*val2 = IIO_DEGREE_TO_RAD(73260);
-			}
+			if (spi_get_device_id(st->us)->driver_data)
+				*val2 = 320;
+			else
+				*val2 = 1278;
 			return IIO_VAL_INT_PLUS_MICRO;
 		case IIO_VOLTAGE:
-			if (chan->channel == 0) {
-				*val = 1;
-				*val2 = 831500; /* 1.8315 mV */
-			} else {
-				*val = 0;
-				*val2 = 610500; /* 610.5 uV */
-			}
+			*val = 0;
+			if (chan->channel == 0)
+				*val2 = 18315;
+			else
+				*val2 = 610500;
 			return IIO_VAL_INT_PLUS_MICRO;
 		case IIO_TEMP:
-			*val = 145;
-			*val2 = 300000; /* 0.1453 C */
+			*val = 0;
+			*val2 = 145300;
 			return IIO_VAL_INT_PLUS_MICRO;
 		default:
 			return -EINVAL;
 		}
 		break;
 	case IIO_CHAN_INFO_OFFSET:
-		*val = 250000 / 1453; /* 25 C = 0x00 */
+		*val = 25;
 		return IIO_VAL_INT;
 	case IIO_CHAN_INFO_CALIBBIAS:
 		switch (chan->type) {
@@ -705,18 +700,24 @@ error_ret:
 	return ret;
 }
 
-static int __devexit adis16260_remove(struct spi_device *spi)
+static int adis16260_remove(struct spi_device *spi)
 {
+	int ret;
 	struct iio_dev *indio_dev = spi_get_drvdata(spi);
 
 	iio_device_unregister(indio_dev);
-	adis16260_stop_device(indio_dev);
+
+	ret = adis16260_stop_device(indio_dev);
+	if (ret)
+		goto err_ret;
+
 	adis16260_remove_trigger(indio_dev);
 	iio_buffer_unregister(indio_dev);
 	adis16260_unconfigure_ring(indio_dev);
 	iio_device_free(indio_dev);
 
-	return 0;
+err_ret:
+	return ret;
 }
 
 /*

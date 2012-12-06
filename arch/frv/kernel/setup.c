@@ -112,11 +112,9 @@ char __initdata redboot_command_line[COMMAND_LINE_SIZE];
 #ifdef CONFIG_PM
 #define __pminit
 #define __pminitdata
-#define __pminitconst
 #else
 #define __pminit __init
 #define __pminitdata __initdata
-#define __pminitconst __initconst
 #endif
 
 struct clock_cmode {
@@ -186,7 +184,7 @@ static struct clock_cmode __pminitdata clock_cmodes_fr555[16] = {
 	[6]	= {	_x1,	_x1_5,	_x1_5,	_x4_5,	_x0_375	},
 };
 
-static const struct clock_cmode __pminitconst *clock_cmodes;
+static const struct clock_cmode __pminitdata *clock_cmodes;
 static int __pminitdata clock_doubled;
 
 static struct uart_port __pminitdata __frv_uart0 = {

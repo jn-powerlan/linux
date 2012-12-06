@@ -22,16 +22,17 @@
 #include <linux/input.h>
 #include <linux/smc91x.h>
 #include <linux/omapfb.h>
-#include <linux/platform_data/keypad-omap.h>
 
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>
 
 #include <plat/tc.h>
-#include <mach/mux.h>
+#include <plat/mux.h>
 #include <plat/fpga.h>
-#include <mach/flash.h>
+#include <plat/flash.h>
+#include <plat/keypad.h>
+#include <plat/board.h>
 
 #include <mach/hardware.h>
 

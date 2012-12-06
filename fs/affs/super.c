@@ -147,11 +147,6 @@ static int init_inodecache(void)
 
 static void destroy_inodecache(void)
 {
-	/*
-	 * Make sure all delayed rcu free inodes are flushed before we
-	 * destroy cache.
-	 */
-	rcu_barrier();
 	kmem_cache_destroy(affs_inode_cachep);
 }
 
@@ -193,7 +188,7 @@ static const match_table_t tokens = {
 };
 
 static int
-parse_options(char *options, kuid_t *uid, kgid_t *gid, int *mode, int *reserved, s32 *root,
+parse_options(char *options, uid_t *uid, gid_t *gid, int *mode, int *reserved, s32 *root,
 		int *blocksize, char **prefix, char *volume, unsigned long *mount_opts)
 {
 	char *p;
@@ -258,17 +253,13 @@ parse_options(char *options, kuid_t *uid, kgid_t *gid, int *mode, int *reserved,
 		case Opt_setgid:
 			if (match_int(&args[0], &option))
 				return 0;
-			*gid = make_kgid(current_user_ns(), option);
-			if (!gid_valid(*gid))
-				return 0;
+			*gid = option;
 			*mount_opts |= SF_SETGID;
 			break;
 		case Opt_setuid:
 			if (match_int(&args[0], &option))
 				return 0;
-			*uid = make_kuid(current_user_ns(), option);
-			if (!uid_valid(*uid))
-				return 0;
+			*uid = option;
 			*mount_opts |= SF_SETUID;
 			break;
 		case Opt_verbose:
@@ -310,8 +301,8 @@ static int affs_fill_super(struct super_block *sb, void *data, int silent)
 	int			 num_bm;
 	int			 i, j;
 	s32			 key;
-	kuid_t			 uid;
-	kgid_t			 gid;
+	uid_t			 uid;
+	gid_t			 gid;
 	int			 reserved;
 	unsigned long		 mount_flags;
 	int			 tmp_flags;	/* fix remount prototype... */
@@ -536,8 +527,8 @@ affs_remount(struct super_block *sb, int *flags, char *data)
 {
 	struct affs_sb_info	*sbi = AFFS_SB(sb);
 	int			 blocksize;
-	kuid_t			 uid;
-	kgid_t			 gid;
+	uid_t			 uid;
+	gid_t			 gid;
 	int			 mode;
 	int			 reserved;
 	int			 root_block;
@@ -560,7 +551,7 @@ affs_remount(struct super_block *sb, int *flags, char *data)
 		return -EINVAL;
 	}
 
-	flush_delayed_work(&sbi->sb_work);
+	flush_delayed_work_sync(&sbi->sb_work);
 	replace_mount_options(sb, new_opts);
 
 	sbi->s_flags = mount_flags;

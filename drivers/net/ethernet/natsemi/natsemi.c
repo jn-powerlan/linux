@@ -947,8 +947,8 @@ static int __devinit natsemi_probe1 (struct pci_dev *pdev,
 	i = register_netdev(dev);
 	if (i)
 		goto err_register_netdev;
-	i = NATSEMI_CREATE_FILE(pdev, dspcfg_workaround);
-	if (i)
+
+	if (NATSEMI_CREATE_FILE(pdev, dspcfg_workaround))
 		goto err_create_file;
 
 	if (netif_msg_drv(np)) {

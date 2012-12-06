@@ -6,8 +6,6 @@
  * License as published by the Free Software Foundation.
  */
 
-#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
-
 #include <linux/acpi.h>
 #include <linux/delay.h>
 #include <linux/pci.h>
@@ -68,7 +66,7 @@ static int dcon_init_xo_1_5(struct dcon_priv *dcon)
 	pdev = pci_get_device(PCI_VENDOR_ID_VIA,
 			      PCI_DEVICE_ID_VIA_VX855, NULL);
 	if (!pdev) {
-		pr_err("cannot find VX855 PCI ID\n");
+		printk(KERN_ERR "cannot find VX855 PCI ID\n");
 		return 1;
 	}
 
@@ -106,7 +104,7 @@ static int dcon_init_xo_1_5(struct dcon_priv *dcon)
 	/* we're sharing the IRQ with ACPI */
 	irq = acpi_gbl_FADT.sci_interrupt;
 	if (request_irq(irq, &dcon_interrupt, IRQF_SHARED, "DCON", dcon)) {
-		pr_err("DCON (IRQ%d) allocation failed\n", irq);
+		printk(KERN_ERR PREFIX "DCON (IRQ%d) allocation failed\n", irq);
 		return 1;
 	}
 

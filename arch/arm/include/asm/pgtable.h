@@ -16,7 +16,7 @@
 #ifndef CONFIG_MMU
 
 #include <asm-generic/4level-fixup.h>
-#include <asm/pgtable-nommu.h>
+#include "pgtable-nommu.h"
 
 #else
 

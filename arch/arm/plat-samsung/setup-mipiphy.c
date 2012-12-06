@@ -14,18 +14,24 @@
 #include <linux/spinlock.h>
 #include <mach/regs-clock.h>
 
-static int __s5p_mipi_phy_control(int id, bool on, u32 reset)
+static int __s5p_mipi_phy_control(struct platform_device *pdev,
+				  bool on, u32 reset)
 {
 	static DEFINE_SPINLOCK(lock);
 	void __iomem *addr;
 	unsigned long flags;
+	int pid;
 	u32 cfg;
 
-	id = max(0, id);
-	if (id > 1)
+	if (!pdev)
 		return -EINVAL;
 
-	addr = S5P_MIPI_DPHY_CONTROL(id);
+	pid = (pdev->id == -1) ? 0 : pdev->id;
+
+	if (pid != 0 && pid != 1)
+		return -EINVAL;
+
+	addr = S5P_MIPI_DPHY_CONTROL(pid);
 
 	spin_lock_irqsave(&lock, flags);
 
@@ -46,12 +52,12 @@ static int __s5p_mipi_phy_control(int id, bool on, u32 reset)
 	return 0;
 }
 
-int s5p_csis_phy_enable(int id, bool on)
+int s5p_csis_phy_enable(struct platform_device *pdev, bool on)
 {
-	return __s5p_mipi_phy_control(id, on, S5P_MIPI_DPHY_SRESETN);
+	return __s5p_mipi_phy_control(pdev, on, S5P_MIPI_DPHY_SRESETN);
 }
 
 int s5p_dsim_phy_enable(struct platform_device *pdev, bool on)
 {
-	return __s5p_mipi_phy_control(pdev->id, on, S5P_MIPI_DPHY_MRESETN);
+	return __s5p_mipi_phy_control(pdev, on, S5P_MIPI_DPHY_MRESETN);
 }

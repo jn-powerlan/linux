@@ -639,7 +639,7 @@ static int __btrfs_open_devices(struct btrfs_fs_devices *fs_devices,
 
 		bdev = blkdev_get_by_path(device->name->str, flags, holder);
 		if (IS_ERR(bdev)) {
-			printk(KERN_INFO "btrfs: open %s failed\n", device->name->str);
+			printk(KERN_INFO "open %s failed\n", device->name->str);
 			goto error;
 		}
 		filemap_write_and_wait(bdev->bd_inode->i_mapping);
@@ -1475,9 +1475,6 @@ int btrfs_rm_device(struct btrfs_root *root, char *device_path)
 		free_fs_devices(cur_devices);
 	}
 
-	root->fs_info->num_tolerated_disk_barrier_failures =
-		btrfs_calc_num_tolerated_disk_barrier_failures(root->fs_info);
-
 	/*
 	 * at this point, the device is zero sized.  We want to
 	 * remove it from the devices list and zero out the old super
@@ -1778,21 +1775,15 @@ int btrfs_init_new_device(struct btrfs_root *root, char *device_path)
 
 	if (seeding_dev) {
 		ret = init_first_rw_device(trans, root, device);
-		if (ret) {
-			btrfs_abort_transaction(trans, root, ret);
+		if (ret)
 			goto error_trans;
-		}
 		ret = btrfs_finish_sprout(trans, root);
-		if (ret) {
-			btrfs_abort_transaction(trans, root, ret);
+		if (ret)
 			goto error_trans;
-		}
 	} else {
 		ret = btrfs_add_device(trans, root, device);
-		if (ret) {
-			btrfs_abort_transaction(trans, root, ret);
+		if (ret)
 			goto error_trans;
-		}
 	}
 
 	/*
@@ -1802,8 +1793,6 @@ int btrfs_init_new_device(struct btrfs_root *root, char *device_path)
 	btrfs_clear_space_info_full(root->fs_info);
 
 	unlock_chunks(root);
-	root->fs_info->num_tolerated_disk_barrier_failures =
-		btrfs_calc_num_tolerated_disk_barrier_failures(root->fs_info);
 	ret = btrfs_commit_transaction(trans, root);
 
 	if (seeding_dev) {
@@ -1819,19 +1808,13 @@ int btrfs_init_new_device(struct btrfs_root *root, char *device_path)
 				    "Failed to relocate sys chunks after "
 				    "device initialization. This can be fixed "
 				    "using the \"btrfs balance\" command.");
-		trans = btrfs_attach_transaction(root);
-		if (IS_ERR(trans)) {
-			if (PTR_ERR(trans) == -ENOENT)
-				return 0;
-			return PTR_ERR(trans);
-		}
-		ret = btrfs_commit_transaction(trans, root);
 	}
 
 	return ret;
 
 error_trans:
 	unlock_chunks(root);
+	btrfs_abort_transaction(trans, root, ret);
 	btrfs_end_transaction(trans, root);
 	rcu_string_free(device->name);
 	kfree(device);
@@ -2821,26 +2804,6 @@ int btrfs_balance(struct btrfs_balance_control *bctl,
 		}
 	}
 
-	if (bctl->sys.flags & BTRFS_BALANCE_ARGS_CONVERT) {
-		int num_tolerated_disk_barrier_failures;
-		u64 target = bctl->sys.target;
-
-		num_tolerated_disk_barrier_failures =
-			btrfs_calc_num_tolerated_disk_barrier_failures(fs_info);
-		if (num_tolerated_disk_barrier_failures > 0 &&
-		    (target &
-		     (BTRFS_BLOCK_GROUP_DUP | BTRFS_BLOCK_GROUP_RAID0 |
-		      BTRFS_AVAIL_ALLOC_BIT_SINGLE)))
-			num_tolerated_disk_barrier_failures = 0;
-		else if (num_tolerated_disk_barrier_failures > 1 &&
-			 (target &
-			  (BTRFS_BLOCK_GROUP_RAID1 | BTRFS_BLOCK_GROUP_RAID10)))
-			num_tolerated_disk_barrier_failures = 1;
-
-		fs_info->num_tolerated_disk_barrier_failures =
-			num_tolerated_disk_barrier_failures;
-	}
-
 	ret = insert_balance_item(fs_info->tree_root, bctl);
 	if (ret && ret != -EEXIST)
 		goto out;
@@ -2871,11 +2834,6 @@ int btrfs_balance(struct btrfs_balance_control *bctl,
 	if ((ret && ret != -ECANCELED && ret != -ENOSPC) ||
 	    balance_need_close(fs_info)) {
 		__cancel_balance(fs_info);
-	}
-
-	if (bctl->sys.flags & BTRFS_BALANCE_ARGS_CONVERT) {
-		fs_info->num_tolerated_disk_barrier_failures =
-			btrfs_calc_num_tolerated_disk_barrier_failures(fs_info);
 	}
 
 	wake_up(&fs_info->balance_wait_q);
@@ -3650,16 +3608,12 @@ static noinline int init_first_rw_device(struct btrfs_trans_handle *trans,
 	ret = __btrfs_alloc_chunk(trans, extent_root, &sys_map,
 				  &sys_chunk_size, &sys_stripe_size,
 				  sys_chunk_offset, alloc_profile);
-	if (ret) {
-		btrfs_abort_transaction(trans, root, ret);
-		goto out;
-	}
+	if (ret)
+		goto abort;
 
 	ret = btrfs_add_device(trans, fs_info->chunk_root, device);
-	if (ret) {
-		btrfs_abort_transaction(trans, root, ret);
-		goto out;
-	}
+	if (ret)
+		goto abort;
 
 	/*
 	 * Modifying chunk tree needs allocating new blocks from both
@@ -3669,19 +3623,19 @@ static noinline int init_first_rw_device(struct btrfs_trans_handle *trans,
 	 */
 	ret = __finish_chunk_alloc(trans, extent_root, map, chunk_offset,
 				   chunk_size, stripe_size);
-	if (ret) {
-		btrfs_abort_transaction(trans, root, ret);
-		goto out;
-	}
+	if (ret)
+		goto abort;
 
 	ret = __finish_chunk_alloc(trans, extent_root, sys_map,
 				   sys_chunk_offset, sys_chunk_size,
 				   sys_stripe_size);
 	if (ret)
-		btrfs_abort_transaction(trans, root, ret);
+		goto abort;
 
-out:
+	return 0;
 
+abort:
+	btrfs_abort_transaction(trans, root, ret);
 	return ret;
 }
 
@@ -3806,7 +3760,7 @@ static int __btrfs_map_block(struct btrfs_mapping_tree *map_tree, int rw,
 	read_unlock(&em_tree->lock);
 
 	if (!em) {
-		printk(KERN_CRIT "btrfs: unable to find logical %llu len %llu\n",
+		printk(KERN_CRIT "unable to find logical %llu len %llu\n",
 		       (unsigned long long)logical,
 		       (unsigned long long)*length);
 		BUG();
@@ -4263,7 +4217,7 @@ int btrfs_map_bio(struct btrfs_root *root, int rw, struct bio *bio,
 
 	total_devs = bbio->num_stripes;
 	if (map_length < length) {
-		printk(KERN_CRIT "btrfs: mapping failed logical %llu bio len %llu "
+		printk(KERN_CRIT "mapping failed logical %llu bio len %llu "
 		       "len %llu\n", (unsigned long long)logical,
 		       (unsigned long long)length,
 		       (unsigned long long)map_length);

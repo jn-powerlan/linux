@@ -25,14 +25,9 @@
 #include <linux/netfilter/ipset/ip_set_getport.h>
 #include <linux/netfilter/ipset/ip_set_hash.h>
 
-#define REVISION_MIN	0
-/*			1    SCTP and UDPLITE support added */
-/*			2    Range as input support for IPv4 added */
-#define REVISION_MAX	3 /* nomatch flag support added */
-
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Jozsef Kadlecsik <kadlec@blackhole.kfki.hu>");
-IP_SET_MODULE_DESC("hash:ip,port,net", REVISION_MIN, REVISION_MAX);
+MODULE_DESCRIPTION("hash:ip,port,net type of IP sets");
 MODULE_ALIAS("ip_set_hash:ip,port,net");
 
 /* Type specific function prefix */
@@ -104,10 +99,10 @@ hash_ipportnet4_data_flags(struct hash_ipportnet4_elem *dst, u32 flags)
 	dst->nomatch = !!(flags & IPSET_FLAG_NOMATCH);
 }
 
-static inline int
+static inline bool
 hash_ipportnet4_data_match(const struct hash_ipportnet4_elem *elem)
 {
-	return elem->nomatch ? -ENOTEMPTY : 1;
+	return !elem->nomatch;
 }
 
 static inline void
@@ -178,9 +173,9 @@ static inline void
 hash_ipportnet4_data_next(struct ip_set_hash *h,
 			  const struct hash_ipportnet4_elem *d)
 {
-	h->next.ip = d->ip;
-	h->next.port = d->port;
-	h->next.ip2 = d->ip2;
+	h->next.ip = ntohl(d->ip);
+	h->next.port = ntohs(d->port);
+	h->next.ip2 = ntohl(d->ip2);
 }
 
 static int
@@ -215,8 +210,8 @@ hash_ipportnet4_uadt(struct ip_set *set, struct nlattr *tb[],
 	const struct ip_set_hash *h = set->data;
 	ipset_adtfn adtfn = set->variant->adt[adt];
 	struct hash_ipportnet4_elem data = { .cidr = HOST_MASK - 1 };
-	u32 ip, ip_to, p = 0, port, port_to;
-	u32 ip2_from, ip2_to, ip2_last, ip2;
+	u32 ip, ip_to = 0, p = 0, port, port_to;
+	u32 ip2_from = 0, ip2_to, ip2_last, ip2;
 	u32 timeout = h->timeout;
 	bool with_ports = false;
 	u8 cidr;
@@ -286,7 +281,6 @@ hash_ipportnet4_uadt(struct ip_set *set, struct nlattr *tb[],
 		return ip_set_eexist(ret, flags) ? 0 : ret;
 	}
 
-	ip_to = ip;
 	if (tb[IPSET_ATTR_IP_TO]) {
 		ret = ip_set_get_hostipaddr4(tb[IPSET_ATTR_IP_TO], &ip_to);
 		if (ret)
@@ -296,7 +290,7 @@ hash_ipportnet4_uadt(struct ip_set *set, struct nlattr *tb[],
 	} else if (tb[IPSET_ATTR_CIDR]) {
 		u8 cidr = nla_get_u8(tb[IPSET_ATTR_CIDR]);
 
-		if (!cidr || cidr > 32)
+		if (cidr > 32)
 			return -IPSET_ERR_INVALID_CIDR;
 		ip_set_mask_from_to(ip, ip_to, cidr);
 	}
@@ -307,8 +301,6 @@ hash_ipportnet4_uadt(struct ip_set *set, struct nlattr *tb[],
 		if (port > port_to)
 			swap(port, port_to);
 	}
-
-	ip2_to = ip2_from;
 	if (tb[IPSET_ATTR_IP2_TO]) {
 		ret = ip_set_get_hostipaddr4(tb[IPSET_ATTR_IP2_TO], &ip2_to);
 		if (ret)
@@ -322,17 +314,14 @@ hash_ipportnet4_uadt(struct ip_set *set, struct nlattr *tb[],
 	}
 
 	if (retried)
-		ip = ntohl(h->next.ip);
+		ip = h->next.ip;
 	for (; !before(ip_to, ip); ip++) {
 		data.ip = htonl(ip);
-		p = retried && ip == ntohl(h->next.ip) ? ntohs(h->next.port)
-						       : port;
+		p = retried && ip == h->next.ip ? h->next.port : port;
 		for (; p <= port_to; p++) {
 			data.port = htons(p);
-			ip2 = retried
-			      && ip == ntohl(h->next.ip)
-			      && p == ntohs(h->next.port)
-				? ntohl(h->next.ip2) : ip2_from;
+			ip2 = retried && ip == h->next.ip && p == h->next.port
+				? h->next.ip2 : ip2_from;
 			while (!after(ip2, ip2_to)) {
 				data.ip2 = htonl(ip2);
 				ip2_last = ip_set_range_to_cidr(ip2, ip2_to,
@@ -414,10 +403,10 @@ hash_ipportnet6_data_flags(struct hash_ipportnet6_elem *dst, u32 flags)
 	dst->nomatch = !!(flags & IPSET_FLAG_NOMATCH);
 }
 
-static inline int
+static inline bool
 hash_ipportnet6_data_match(const struct hash_ipportnet6_elem *elem)
 {
-	return elem->nomatch ? -ENOTEMPTY : 1;
+	return !elem->nomatch;
 }
 
 static inline void
@@ -497,7 +486,7 @@ static inline void
 hash_ipportnet6_data_next(struct ip_set_hash *h,
 			  const struct hash_ipportnet6_elem *d)
 {
-	h->next.port = d->port;
+	h->next.port = ntohs(d->port);
 }
 
 static int
@@ -609,7 +598,7 @@ hash_ipportnet6_uadt(struct ip_set *set, struct nlattr *tb[],
 		swap(port, port_to);
 
 	if (retried)
-		port = ntohs(h->next.port);
+		port = h->next.port;
 	for (; port <= port_to; port++) {
 		data.port = htons(port);
 		ret = adtfn(set, &data, timeout, flags);
@@ -700,12 +689,13 @@ hash_ipportnet_create(struct ip_set *set, struct nlattr *tb[], u32 flags)
 static struct ip_set_type hash_ipportnet_type __read_mostly = {
 	.name		= "hash:ip,port,net",
 	.protocol	= IPSET_PROTOCOL,
-	.features	= IPSET_TYPE_IP | IPSET_TYPE_PORT | IPSET_TYPE_IP2 |
-			  IPSET_TYPE_NOMATCH,
+	.features	= IPSET_TYPE_IP | IPSET_TYPE_PORT | IPSET_TYPE_IP2,
 	.dimension	= IPSET_DIM_THREE,
 	.family		= NFPROTO_UNSPEC,
-	.revision_min	= REVISION_MIN,
-	.revision_max	= REVISION_MAX,
+	.revision_min	= 0,
+	/*		  1	   SCTP and UDPLITE support added */
+	/*		  2	   Range as input support for IPv4 added */
+	.revision_max	= 3,	/* nomatch flag support added */
 	.create		= hash_ipportnet_create,
 	.create_policy	= {
 		[IPSET_ATTR_HASHSIZE]	= { .type = NLA_U32 },

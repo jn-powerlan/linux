@@ -8,8 +8,8 @@
 #include <linux/uio.h>
 #include <linux/workqueue.h>
 
-#include <linux/ceph/types.h>
-#include <linux/ceph/buffer.h>
+#include "types.h"
+#include "buffer.h"
 
 struct ceph_msg;
 struct ceph_connection;

@@ -721,7 +721,7 @@ static struct dentry *vfat_lookup(struct inode *dir, struct dentry *dentry,
 	struct dentry *alias;
 	int err;
 
-	mutex_lock(&MSDOS_SB(sb)->s_lock);
+	lock_super(sb);
 
 	err = vfat_find(dir, &dentry->d_name, &sinfo);
 	if (err) {
@@ -752,13 +752,13 @@ static struct dentry *vfat_lookup(struct inode *dir, struct dentry *dentry,
 		if (!S_ISDIR(inode->i_mode))
 			d_move(alias, dentry);
 		iput(inode);
-		mutex_unlock(&MSDOS_SB(sb)->s_lock);
+		unlock_super(sb);
 		return alias;
 	} else
 		dput(alias);
 
 out:
-	mutex_unlock(&MSDOS_SB(sb)->s_lock);
+	unlock_super(sb);
 	dentry->d_time = dentry->d_parent->d_inode->i_version;
 	dentry = d_splice_alias(inode, dentry);
 	if (dentry)
@@ -766,7 +766,7 @@ out:
 	return dentry;
 
 error:
-	mutex_unlock(&MSDOS_SB(sb)->s_lock);
+	unlock_super(sb);
 	return ERR_PTR(err);
 }
 
@@ -779,7 +779,7 @@ static int vfat_create(struct inode *dir, struct dentry *dentry, umode_t mode,
 	struct timespec ts;
 	int err;
 
-	mutex_lock(&MSDOS_SB(sb)->s_lock);
+	lock_super(sb);
 
 	ts = CURRENT_TIME_SEC;
 	err = vfat_add_entry(dir, &dentry->d_name, 0, 0, &ts, &sinfo);
@@ -800,7 +800,7 @@ static int vfat_create(struct inode *dir, struct dentry *dentry, umode_t mode,
 	dentry->d_time = dentry->d_parent->d_inode->i_version;
 	d_instantiate(dentry, inode);
 out:
-	mutex_unlock(&MSDOS_SB(sb)->s_lock);
+	unlock_super(sb);
 	return err;
 }
 
@@ -811,7 +811,7 @@ static int vfat_rmdir(struct inode *dir, struct dentry *dentry)
 	struct fat_slot_info sinfo;
 	int err;
 
-	mutex_lock(&MSDOS_SB(sb)->s_lock);
+	lock_super(sb);
 
 	err = fat_dir_empty(inode);
 	if (err)
@@ -829,7 +829,7 @@ static int vfat_rmdir(struct inode *dir, struct dentry *dentry)
 	inode->i_mtime = inode->i_atime = CURRENT_TIME_SEC;
 	fat_detach(inode);
 out:
-	mutex_unlock(&MSDOS_SB(sb)->s_lock);
+	unlock_super(sb);
 
 	return err;
 }
@@ -841,7 +841,7 @@ static int vfat_unlink(struct inode *dir, struct dentry *dentry)
 	struct fat_slot_info sinfo;
 	int err;
 
-	mutex_lock(&MSDOS_SB(sb)->s_lock);
+	lock_super(sb);
 
 	err = vfat_find(dir, &dentry->d_name, &sinfo);
 	if (err)
@@ -854,7 +854,7 @@ static int vfat_unlink(struct inode *dir, struct dentry *dentry)
 	inode->i_mtime = inode->i_atime = CURRENT_TIME_SEC;
 	fat_detach(inode);
 out:
-	mutex_unlock(&MSDOS_SB(sb)->s_lock);
+	unlock_super(sb);
 
 	return err;
 }
@@ -867,7 +867,7 @@ static int vfat_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode)
 	struct timespec ts;
 	int err, cluster;
 
-	mutex_lock(&MSDOS_SB(sb)->s_lock);
+	lock_super(sb);
 
 	ts = CURRENT_TIME_SEC;
 	cluster = fat_alloc_new_dir(dir, &ts);
@@ -896,13 +896,13 @@ static int vfat_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode)
 	dentry->d_time = dentry->d_parent->d_inode->i_version;
 	d_instantiate(dentry, inode);
 
-	mutex_unlock(&MSDOS_SB(sb)->s_lock);
+	unlock_super(sb);
 	return 0;
 
 out_free:
 	fat_free_clusters(dir, cluster);
 out:
-	mutex_unlock(&MSDOS_SB(sb)->s_lock);
+	unlock_super(sb);
 	return err;
 }
 
@@ -914,14 +914,14 @@ static int vfat_rename(struct inode *old_dir, struct dentry *old_dentry,
 	struct inode *old_inode, *new_inode;
 	struct fat_slot_info old_sinfo, sinfo;
 	struct timespec ts;
-	loff_t new_i_pos;
+	loff_t dotdot_i_pos, new_i_pos;
 	int err, is_dir, update_dotdot, corrupt = 0;
 	struct super_block *sb = old_dir->i_sb;
 
 	old_sinfo.bh = sinfo.bh = dotdot_bh = NULL;
 	old_inode = old_dentry->d_inode;
 	new_inode = new_dentry->d_inode;
-	mutex_lock(&MSDOS_SB(sb)->s_lock);
+	lock_super(sb);
 	err = vfat_find(old_dir, &old_dentry->d_name, &old_sinfo);
 	if (err)
 		goto out;
@@ -929,7 +929,8 @@ static int vfat_rename(struct inode *old_dir, struct dentry *old_dentry,
 	is_dir = S_ISDIR(old_inode->i_mode);
 	update_dotdot = (is_dir && old_dir != new_dir);
 	if (update_dotdot) {
-		if (fat_get_dotdot_entry(old_inode, &dotdot_bh, &dotdot_de)) {
+		if (fat_get_dotdot_entry(old_inode, &dotdot_bh, &dotdot_de,
+					 &dotdot_i_pos) < 0) {
 			err = -EIO;
 			goto out;
 		}
@@ -996,7 +997,7 @@ out:
 	brelse(sinfo.bh);
 	brelse(dotdot_bh);
 	brelse(old_sinfo.bh);
-	mutex_unlock(&MSDOS_SB(sb)->s_lock);
+	unlock_super(sb);
 
 	return err;
 

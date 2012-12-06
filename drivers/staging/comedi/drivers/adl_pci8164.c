@@ -27,7 +27,11 @@ Author: Michel Lachaine <mike@mikelachaine.ca>
 Status: experimental
 Updated: Mon, 14 Apr 2008 15:10:32 +0100
 
-Configuration Options: not applicable, uses PCI auto config
+Configuration Options:
+  [0] - PCI bus of device (optional)
+  [1] - PCI slot of device (optional)
+  If bus/slot is not specified, the first supported
+  PCI device found will be used.
 */
 
 #include "../comedidev.h"
@@ -212,26 +216,61 @@ static int adl_pci8164_insn_write_buf1(struct comedi_device *dev,
 	return 2;
 }
 
-static int adl_pci8164_attach_pci(struct comedi_device *dev,
-				  struct pci_dev *pcidev)
+static struct pci_dev *adl_pci8164_find_pci(struct comedi_device *dev,
+					    struct comedi_devconfig *it)
 {
+	struct pci_dev *pcidev = NULL;
+	int bus = it->options[0];
+	int slot = it->options[1];
+
+	for_each_pci_dev(pcidev) {
+		if (pcidev->vendor != PCI_VENDOR_ID_ADLINK ||
+		    pcidev->device != PCI_DEVICE_ID_PCI8164)
+			continue;
+		if (bus || slot) {
+			/* requested particular bus/slot */
+			if (pcidev->bus->number != bus ||
+			    PCI_SLOT(pcidev->devfn) != slot)
+				continue;
+		}
+		return pcidev;
+	}
+	printk(KERN_ERR
+		"comedi%d: no supported board found! (req. bus/slot : %d/%d)\n",
+		dev->minor, bus, slot);
+	return NULL;
+}
+
+static int adl_pci8164_attach(struct comedi_device *dev,
+			      struct comedi_devconfig *it)
+{
+	struct pci_dev *pcidev;
 	struct comedi_subdevice *s;
 	int ret;
 
-	comedi_set_hw_dev(dev, &pcidev->dev);
+	printk(KERN_INFO "comedi: attempt to attach...\n");
+	printk(KERN_INFO "comedi%d: adl_pci8164\n", dev->minor);
 
-	dev->board_name = dev->driver->driver_name;
-
-	ret = comedi_pci_enable(pcidev, dev->board_name);
-	if (ret)
-		return ret;
-	dev->iobase = pci_resource_start(pcidev, 2);
+	dev->board_name = "pci8164";
 
 	ret = comedi_alloc_subdevices(dev, 4);
 	if (ret)
 		return ret;
 
-	s = &dev->subdevices[0];
+	pcidev = adl_pci8164_find_pci(dev, it);
+	if (!pcidev)
+		return -EIO;
+	comedi_set_hw_dev(dev, &pcidev->dev);
+
+	if (comedi_pci_enable(pcidev, "adl_pci8164") < 0) {
+		printk(KERN_ERR "comedi%d: Failed to enable "
+		"PCI device and request regions\n", dev->minor);
+		return -EIO;
+	}
+	dev->iobase = pci_resource_start(pcidev, 2);
+	printk(KERN_DEBUG "comedi: base addr %4lx\n", dev->iobase);
+
+	s = dev->subdevices + 0;
 	s->type = COMEDI_SUBD_PROC;
 	s->subdev_flags = SDF_READABLE | SDF_WRITABLE;
 	s->n_chan = 4;
@@ -241,7 +280,7 @@ static int adl_pci8164_attach_pci(struct comedi_device *dev,
 	s->insn_read = adl_pci8164_insn_read_msts;
 	s->insn_write = adl_pci8164_insn_write_cmd;
 
-	s = &dev->subdevices[1];
+	s = dev->subdevices + 1;
 	s->type = COMEDI_SUBD_PROC;
 	s->subdev_flags = SDF_READABLE | SDF_WRITABLE;
 	s->n_chan = 4;
@@ -251,7 +290,7 @@ static int adl_pci8164_attach_pci(struct comedi_device *dev,
 	s->insn_read = adl_pci8164_insn_read_ssts;
 	s->insn_write = adl_pci8164_insn_write_otp;
 
-	s = &dev->subdevices[2];
+	s = dev->subdevices + 2;
 	s->type = COMEDI_SUBD_PROC;
 	s->subdev_flags = SDF_READABLE | SDF_WRITABLE;
 	s->n_chan = 4;
@@ -261,7 +300,7 @@ static int adl_pci8164_attach_pci(struct comedi_device *dev,
 	s->insn_read = adl_pci8164_insn_read_buf0;
 	s->insn_write = adl_pci8164_insn_write_buf0;
 
-	s = &dev->subdevices[3];
+	s = dev->subdevices + 3;
 	s->type = COMEDI_SUBD_PROC;
 	s->subdev_flags = SDF_READABLE | SDF_WRITABLE;
 	s->n_chan = 4;
@@ -271,8 +310,7 @@ static int adl_pci8164_attach_pci(struct comedi_device *dev,
 	s->insn_read = adl_pci8164_insn_read_buf1;
 	s->insn_write = adl_pci8164_insn_write_buf1;
 
-	dev_info(dev->class_dev, "%s attached\n", dev->board_name);
-
+	printk(KERN_INFO "comedi: attached\n");
 	return 0;
 }
 
@@ -283,13 +321,14 @@ static void adl_pci8164_detach(struct comedi_device *dev)
 	if (pcidev) {
 		if (dev->iobase)
 			comedi_pci_disable(pcidev);
+		pci_dev_put(pcidev);
 	}
 }
 
 static struct comedi_driver adl_pci8164_driver = {
 	.driver_name	= "adl_pci8164",
 	.module		= THIS_MODULE,
-	.attach_pci	= adl_pci8164_attach_pci,
+	.attach		= adl_pci8164_attach,
 	.detach		= adl_pci8164_detach,
 };
 

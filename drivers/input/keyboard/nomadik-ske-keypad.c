@@ -20,7 +20,7 @@
 #include <linux/clk.h>
 #include <linux/module.h>
 
-#include <linux/platform_data/keypad-nomadik-ske.h>
+#include <plat/ske.h>
 
 /* SKE_CR bits */
 #define SKE_KPMLT	(0x1 << 6)

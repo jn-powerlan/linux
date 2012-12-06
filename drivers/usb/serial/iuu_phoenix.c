@@ -32,6 +32,13 @@
 #include "iuu_phoenix.h"
 #include <linux/random.h>
 
+
+#ifdef CONFIG_USB_SERIAL_DEBUG
+static bool debug = 1;
+#else
+static bool debug;
+#endif
+
 /*
  * Version Information
  */
@@ -67,6 +74,7 @@ struct iuu_private {
 	u8 *writebuf;		/* buffer for writing to device */
 	int writelen;		/* num of byte to write to device */
 	u8 *buf;		/* used for initialize speed */
+	u8 *dbgbuf;		/* debug buffer */
 	u8 len;
 	int vcc;		/* vcc (either 3 or 5 V) */
 	u32 baud;
@@ -96,6 +104,14 @@ static int iuu_port_probe(struct usb_serial_port *port)
 		return -ENOMEM;
 	}
 
+	priv->dbgbuf = kzalloc(256, GFP_KERNEL);
+	if (!priv->dbgbuf) {
+		kfree(priv->writebuf);
+		kfree(priv->buf);
+		kfree(priv);
+		return -ENOMEM;
+	}
+
 	priv->vcc = vcc_default;
 	spin_lock_init(&priv->lock);
 	init_waitqueue_head(&priv->delta_msr_wait);
@@ -104,6 +120,7 @@ static int iuu_port_probe(struct usb_serial_port *port)
 
 	ret = iuu_create_sysfs_attrs(port);
 	if (ret) {
+		kfree(priv->dbgbuf);
 		kfree(priv->writebuf);
 		kfree(priv->buf);
 		kfree(priv);
@@ -118,6 +135,7 @@ static int iuu_port_remove(struct usb_serial_port *port)
 	struct iuu_private *priv = usb_get_serial_port_data(port);
 
 	iuu_remove_sysfs_attrs(port);
+	kfree(priv->dbgbuf);
 	kfree(priv->writebuf);
 	kfree(priv->buf);
 	kfree(priv);
@@ -133,13 +151,13 @@ static int iuu_tiocmset(struct tty_struct *tty,
 	unsigned long flags;
 
 	/* FIXME: locking on tiomstatus */
-	dev_dbg(&port->dev, "%s msg : SET = 0x%04x, CLEAR = 0x%04x\n",
-		__func__, set, clear);
+	dbg("%s (%d) msg : SET = 0x%04x, CLEAR = 0x%04x ", __func__,
+	    port->number, set, clear);
 
 	spin_lock_irqsave(&priv->lock, flags);
 
 	if ((set & TIOCM_RTS) && !(priv->tiostatus == TIOCM_RTS)) {
-		dev_dbg(&port->dev, "%s TIOCMSET RESET called !!!\n", __func__);
+		dbg("%s TIOCMSET RESET called !!!", __func__);
 		priv->reset = 1;
 	}
 	if (set & TIOCM_RTS)
@@ -175,7 +193,7 @@ static void iuu_rxcmd(struct urb *urb)
 	int status = urb->status;
 
 	if (status) {
-		dev_dbg(&port->dev, "%s - status = %d\n", __func__, status);
+		dbg("%s - status = %d", __func__, status);
 		/* error stop all */
 		return;
 	}
@@ -229,13 +247,13 @@ static void iuu_update_status_callback(struct urb *urb)
 	int status = urb->status;
 
 	if (status) {
-		dev_dbg(&port->dev, "%s - status = %d\n", __func__, status);
+		dbg("%s - status = %d", __func__, status);
 		/* error stop all */
 		return;
 	}
 
 	st = urb->transfer_buffer;
-	dev_dbg(&port->dev, "%s - enter\n", __func__);
+	dbg("%s - enter", __func__);
 	if (urb->actual_length == 1) {
 		switch (st[0]) {
 		case 0x1:
@@ -257,7 +275,7 @@ static void iuu_status_callback(struct urb *urb)
 	int result;
 	int status = urb->status;
 
-	dev_dbg(&port->dev, "%s - status = %d\n", __func__, status);
+	dbg("%s - status = %d", __func__, status);
 	usb_fill_bulk_urb(port->read_urb, port->serial->dev,
 			  usb_rcvbulkpipe(port->serial->dev,
 					  port->bulk_in_endpointAddress),
@@ -296,9 +314,9 @@ static int bulk_immediate(struct usb_serial_port *port, u8 *buf, u8 count)
 			 count, &actual, HZ * 1);
 
 	if (status != IUU_OPERATION_OK)
-		dev_dbg(&port->dev, "%s - error = %2x\n", __func__, status);
+		dbg("%s - error = %2x", __func__, status);
 	else
-		dev_dbg(&port->dev, "%s - write OK !\n", __func__);
+		dbg("%s - write OK !", __func__);
 	return status;
 }
 
@@ -316,9 +334,9 @@ static int read_immediate(struct usb_serial_port *port, u8 *buf, u8 count)
 			 count, &actual, HZ * 1);
 
 	if (status != IUU_OPERATION_OK)
-		dev_dbg(&port->dev, "%s - error = %2x\n", __func__, status);
+		dbg("%s - error = %2x", __func__, status);
 	else
-		dev_dbg(&port->dev, "%s - read OK !\n", __func__);
+		dbg("%s - read OK !", __func__);
 	return status;
 }
 
@@ -342,9 +360,9 @@ static int iuu_led(struct usb_serial_port *port, unsigned int R,
 	status = bulk_immediate(port, buf, 8);
 	kfree(buf);
 	if (status != IUU_OPERATION_OK)
-		dev_dbg(&port->dev, "%s - led error status = %2x\n", __func__, status);
+		dbg("%s - led error status = %2x", __func__, status);
 	else
-		dev_dbg(&port->dev, "%s - led OK !\n", __func__);
+		dbg("%s - led OK !", __func__);
 	return IUU_OPERATION_OK;
 }
 
@@ -430,7 +448,7 @@ static int iuu_clk(struct usb_serial_port *port, int dwFrq)
 
 		status = bulk_immediate(port, (u8 *) priv->buf, Count);
 		if (status != 0) {
-			dev_dbg(&port->dev, "%s - write error\n", __func__);
+			dbg("%s - write error ", __func__);
 			return status;
 		}
 	} else if (frq == 3579000) {
@@ -539,13 +557,12 @@ static int iuu_clk(struct usb_serial_port *port, int dwFrq)
 
 	status = bulk_immediate(port, (u8 *) priv->buf, Count);
 	if (status != IUU_OPERATION_OK)
-		dev_dbg(&port->dev, "%s - write error\n", __func__);
+		dbg("%s - write error ", __func__);
 	return status;
 }
 
 static int iuu_uart_flush(struct usb_serial_port *port)
 {
-	struct device *dev = &port->dev;
 	int i;
 	int status;
 	u8 rxcmd = IUU_UART_RX;
@@ -557,26 +574,27 @@ static int iuu_uart_flush(struct usb_serial_port *port)
 	for (i = 0; i < 2; i++) {
 		status = bulk_immediate(port, &rxcmd, 1);
 		if (status != IUU_OPERATION_OK) {
-			dev_dbg(dev, "%s - uart_flush_write error\n", __func__);
+			dbg("%s - uart_flush_write error", __func__);
 			return status;
 		}
 
 		status = read_immediate(port, &priv->len, 1);
 		if (status != IUU_OPERATION_OK) {
-			dev_dbg(dev, "%s - uart_flush_read error\n", __func__);
+			dbg("%s - uart_flush_read error", __func__);
 			return status;
 		}
 
 		if (priv->len > 0) {
-			dev_dbg(dev, "%s - uart_flush datalen is : %i\n", __func__, priv->len);
+			dbg("%s - uart_flush datalen is : %i ", __func__,
+			    priv->len);
 			status = read_immediate(port, priv->buf, priv->len);
 			if (status != IUU_OPERATION_OK) {
-				dev_dbg(dev, "%s - uart_flush_read error\n", __func__);
+				dbg("%s - uart_flush_read error", __func__);
 				return status;
 			}
 		}
 	}
-	dev_dbg(dev, "%s - uart_flush_read OK!\n", __func__);
+	dbg("%s - uart_flush_read OK!", __func__);
 	iuu_led(port, 0, 0xF000, 0, 0xFF);
 	return status;
 }
@@ -595,10 +613,10 @@ static void read_buf_callback(struct urb *urb)
 		return;
 	}
 
-	dev_dbg(&port->dev, "%s - %i chars to write\n", __func__, urb->actual_length);
+	dbg("%s - %i chars to write", __func__, urb->actual_length);
 	tty = tty_port_tty_get(&port->port);
 	if (data == NULL)
-		dev_dbg(&port->dev, "%s - data is NULL !!!\n", __func__);
+		dbg("%s - data is NULL !!!", __func__);
 	if (tty && urb->actual_length && data) {
 		tty_insert_flip_string(tty, data, urb->actual_length);
 		tty_flip_buffer_push(tty);
@@ -612,6 +630,7 @@ static int iuu_bulk_write(struct usb_serial_port *port)
 	struct iuu_private *priv = usb_get_serial_port_data(port);
 	unsigned long flags;
 	int result;
+	int i;
 	int buf_len;
 	char *buf_ptr = port->write_urb->transfer_buffer;
 
@@ -624,8 +643,14 @@ static int iuu_bulk_write(struct usb_serial_port *port)
 	buf_len = priv->writelen;
 	priv->writelen = 0;
 	spin_unlock_irqrestore(&priv->lock, flags);
-	dev_dbg(&port->dev, "%s - writing %i chars : %*ph\n", __func__,
-		buf_len, buf_len, buf_ptr);
+	if (debug == 1) {
+		for (i = 0; i < buf_len; i++)
+			sprintf(priv->dbgbuf + i*2 ,
+				"%02X", priv->writebuf[i]);
+		priv->dbgbuf[buf_len+i*2] = 0;
+		dbg("%s - writing %i chars : %s", __func__,
+		    buf_len, priv->dbgbuf);
+	}
 	usb_fill_bulk_urb(port->write_urb, port->serial->dev,
 			  usb_sndbulkpipe(port->serial->dev,
 					  port->bulk_out_endpointAddress),
@@ -661,18 +686,18 @@ static void iuu_uart_read_callback(struct urb *urb)
 	priv->poll++;
 
 	if (status) {
-		dev_dbg(&port->dev, "%s - status = %d\n", __func__, status);
+		dbg("%s - status = %d", __func__, status);
 		/* error stop all */
 		return;
 	}
 	if (data == NULL)
-		dev_dbg(&port->dev, "%s - data is NULL !!!\n", __func__);
+		dbg("%s - data is NULL !!!", __func__);
 
 	if (urb->actual_length == 1  && data != NULL)
 		len = (int) data[0];
 
 	if (urb->actual_length > 1) {
-		dev_dbg(&port->dev, "%s - urb->actual_length = %i\n", __func__,
+		dbg("%s - urb->actual_length = %i", __func__,
 		    urb->actual_length);
 		error = 1;
 		return;
@@ -680,7 +705,7 @@ static void iuu_uart_read_callback(struct urb *urb)
 	/* if len > 0 call readbuf */
 
 	if (len > 0 && error == 0) {
-		dev_dbg(&port->dev, "%s - call read buf - len to read is %i\n",
+		dbg("%s - call read buf - len to read is %i ",
 			__func__, len);
 		status = iuu_read_buf(port, len);
 		return;
@@ -707,7 +732,7 @@ static void iuu_uart_read_callback(struct urb *urb)
 	}
 	spin_unlock_irqrestore(&priv->lock, flags);
 	/* if nothing to write call again rxcmd */
-	dev_dbg(&port->dev, "%s - rxcmd recall\n", __func__);
+	dbg("%s - rxcmd recall", __func__);
 	iuu_led_activity_off(urb);
 }
 
@@ -747,7 +772,7 @@ static void read_rxcmd_callback(struct urb *urb)
 			  port->read_urb->transfer_buffer, 256,
 			  iuu_uart_read_callback, port);
 	result = usb_submit_urb(port->read_urb, GFP_ATOMIC);
-	dev_dbg(&port->dev, "%s - submit result = %d\n", __func__, result);
+	dbg("%s - submit result = %d", __func__, result);
 }
 
 static int iuu_uart_on(struct usb_serial_port *port)
@@ -767,13 +792,13 @@ static int iuu_uart_on(struct usb_serial_port *port)
 
 	status = bulk_immediate(port, buf, 4);
 	if (status != IUU_OPERATION_OK) {
-		dev_dbg(&port->dev, "%s - uart_on error\n", __func__);
+		dbg("%s - uart_on error", __func__);
 		goto uart_enable_failed;
 	}
 	/*  iuu_reset() the card after iuu_uart_on() */
 	status = iuu_uart_flush(port);
 	if (status != IUU_OPERATION_OK)
-		dev_dbg(&port->dev, "%s - uart_flush error\n", __func__);
+		dbg("%s - uart_flush error", __func__);
 uart_enable_failed:
 	kfree(buf);
 	return status;
@@ -791,7 +816,7 @@ static int iuu_uart_off(struct usb_serial_port *port)
 
 	status = bulk_immediate(port, buf, 1);
 	if (status != IUU_OPERATION_OK)
-		dev_dbg(&port->dev, "%s - uart_off error\n", __func__);
+		dbg("%s - uart_off error", __func__);
 
 	kfree(buf);
 	return status;
@@ -808,7 +833,7 @@ static int iuu_uart_baud(struct usb_serial_port *port, u32 baud_base,
 	u8 T1reload = 0;
 	unsigned int T1FrekvensHZ = 0;
 
-	dev_dbg(&port->dev, "%s - enter baud_base=%d\n", __func__, baud_base);
+	dbg("%s - enter baud_base=%d", __func__, baud_base);
 	dataout = kmalloc(sizeof(u8) * 5, GFP_KERNEL);
 
 	if (!dataout)
@@ -889,7 +914,7 @@ static int iuu_uart_baud(struct usb_serial_port *port, u32 baud_base,
 
 	status = bulk_immediate(port, dataout, DataCount);
 	if (status != IUU_OPERATION_OK)
-		dev_dbg(&port->dev, "%s - uart_off error\n", __func__);
+		dbg("%s - uart_off error", __func__);
 	kfree(dataout);
 	return status;
 }
@@ -899,7 +924,7 @@ static void iuu_set_termios(struct tty_struct *tty,
 {
 	const u32 supported_mask = CMSPAR|PARENB|PARODD;
 	struct iuu_private *priv = usb_get_serial_port_data(port);
-	unsigned int cflag = tty->termios.c_cflag;
+	unsigned int cflag = tty->termios->c_cflag;
 	int status;
 	u32 actual;
 	u32 parity;
@@ -908,9 +933,9 @@ static void iuu_set_termios(struct tty_struct *tty,
 	u32 newval = cflag & supported_mask;
 
 	/* Just use the ospeed. ispeed should be the same. */
-	baud = tty->termios.c_ospeed;
+	baud = tty->termios->c_ospeed;
 
-	dev_dbg(&port->dev, "%s - enter c_ospeed or baud=%d\n", __func__, baud);
+	dbg("%s - enter c_ospeed or baud=%d", __func__, baud);
 
 	/* compute the parity parameter */
 	parity = 0;
@@ -939,13 +964,13 @@ static void iuu_set_termios(struct tty_struct *tty,
 	 * settings back over and then adjust them
 	 */
 	if (old_termios)
-		tty_termios_copy_hw(&tty->termios, old_termios);
+		tty_termios_copy_hw(tty->termios, old_termios);
 	if (status != 0)	/* Set failed - return old bits */
 		return;
 	/* Re-encode speed, parity and csize */
 	tty_encode_baud_rate(tty, baud, baud);
-	tty->termios.c_cflag &= ~(supported_mask|CSIZE);
-	tty->termios.c_cflag |= newval | csize;
+	tty->termios->c_cflag &= ~(supported_mask|CSIZE);
+	tty->termios->c_cflag |= newval | csize;
 }
 
 static void iuu_close(struct usb_serial_port *port)
@@ -961,7 +986,7 @@ static void iuu_close(struct usb_serial_port *port)
 	if (serial->dev) {
 		/* free writebuf */
 		/* shutdown our urbs */
-		dev_dbg(&port->dev, "%s - shutting down urbs\n", __func__);
+		dbg("%s - shutting down urbs", __func__);
 		usb_kill_urb(port->write_urb);
 		usb_kill_urb(port->read_urb);
 		usb_kill_urb(port->interrupt_in_urb);
@@ -971,32 +996,31 @@ static void iuu_close(struct usb_serial_port *port)
 
 static void iuu_init_termios(struct tty_struct *tty)
 {
-	tty->termios = tty_std_termios;
-	tty->termios.c_cflag = CLOCAL | CREAD | CS8 | B9600
+	*(tty->termios) = tty_std_termios;
+	tty->termios->c_cflag = CLOCAL | CREAD | CS8 | B9600
 				| TIOCM_CTS | CSTOPB | PARENB;
-	tty->termios.c_ispeed = 9600;
-	tty->termios.c_ospeed = 9600;
-	tty->termios.c_lflag = 0;
-	tty->termios.c_oflag = 0;
-	tty->termios.c_iflag = 0;
+	tty->termios->c_ispeed = 9600;
+	tty->termios->c_ospeed = 9600;
+	tty->termios->c_lflag = 0;
+	tty->termios->c_oflag = 0;
+	tty->termios->c_iflag = 0;
 }
 
 static int iuu_open(struct tty_struct *tty, struct usb_serial_port *port)
 {
 	struct usb_serial *serial = port->serial;
-	struct device *dev = &port->dev;
 	u8 *buf;
 	int result;
 	int baud;
 	u32 actual;
 	struct iuu_private *priv = usb_get_serial_port_data(port);
 
-	baud = tty->termios.c_ospeed;
-	tty->termios.c_ispeed = baud;
+	baud = tty->termios->c_ospeed;
+	tty->termios->c_ispeed = baud;
 	/* Re-encode speed */
 	tty_encode_baud_rate(tty, baud, baud);
 
-	dev_dbg(dev, "%s - baud %d\n", __func__, baud);
+	dbg("%s -  port %d, baud %d", __func__, port->number, baud);
 	usb_clear_halt(serial->dev, port->write_urb->pipe);
 	usb_clear_halt(serial->dev, port->read_urb->pipe);
 
@@ -1011,14 +1035,14 @@ static int iuu_open(struct tty_struct *tty, struct usb_serial_port *port)
 	result = usb_control_msg(port->serial->dev,	\
 				usb_rcvctrlpipe(port->serial->dev, 0),	\
 				b, a, c, d, buf, 1, 1000); \
-	dev_dbg(dev, "0x%x:0x%x:0x%x:0x%x  %d - %x\n", a, b, c, d, result, \
+	dbg("0x%x:0x%x:0x%x:0x%x  %d - %x", a, b, c, d, result, \
 				buf[0]); } while (0);
 
 #define SOUP(a, b, c, d)  do { \
 	result = usb_control_msg(port->serial->dev,	\
 				usb_sndctrlpipe(port->serial->dev, 0),	\
 				b, a, c, d, NULL, 0, 1000); \
-	dev_dbg(dev, "0x%x:0x%x:0x%x:0x%x  %d\n", a, b, c, d, result); } while (0)
+	dbg("0x%x:0x%x:0x%x:0x%x  %d", a, b, c, d, result); } while (0)
 
 	/*  This is not UART related but IUU USB driver related or something */
 	/*  like that. Basically no IUU will accept any commands from the USB */
@@ -1098,7 +1122,7 @@ static int iuu_open(struct tty_struct *tty, struct usb_serial_port *port)
 
 	iuu_uart_flush(port);
 
-	dev_dbg(dev, "%s - initialization done\n", __func__);
+	dbg("%s - initialization done", __func__);
 
 	memset(port->write_urb->transfer_buffer, IUU_UART_RX, 1);
 	usb_fill_bulk_urb(port->write_urb, port->serial->dev,
@@ -1108,10 +1132,11 @@ static int iuu_open(struct tty_struct *tty, struct usb_serial_port *port)
 			  read_rxcmd_callback, port);
 	result = usb_submit_urb(port->write_urb, GFP_KERNEL);
 	if (result) {
-		dev_err(dev, "%s - failed submitting read urb, error %d\n", __func__, result);
+		dev_err(&port->dev, "%s - failed submitting read urb,"
+			" error %d\n", __func__, result);
 		iuu_close(port);
 	} else {
-		dev_dbg(dev, "%s - rxcmd OK\n", __func__);
+		dbg("%s - rxcmd OK", __func__);
 	}
 
 	return result;
@@ -1137,9 +1162,9 @@ static int iuu_vcc_set(struct usb_serial_port *port, unsigned int vcc)
 	kfree(buf);
 
 	if (status != IUU_OPERATION_OK)
-		dev_dbg(&port->dev, "%s - vcc error status = %2x\n", __func__, status);
+		dbg("%s - vcc error status = %2x", __func__, status);
 	else
-		dev_dbg(&port->dev, "%s - vcc OK !\n", __func__);
+		dbg("%s - vcc OK !", __func__);
 
 	return status;
 }
@@ -1170,7 +1195,7 @@ static ssize_t store_vcc_mode(struct device *dev,
 		goto fail_store_vcc_mode;
 	}
 
-	dev_dbg(dev, "%s: setting vcc_mode = %ld", __func__, v);
+	dbg("%s: setting vcc_mode = %ld", __func__, v);
 
 	if ((v != 3) && (v != 5)) {
 		dev_err(dev, "%s - vcc_mode %ld is invalid\n", __func__, v);
@@ -1233,6 +1258,8 @@ MODULE_DESCRIPTION(DRIVER_DESC);
 MODULE_LICENSE("GPL");
 
 MODULE_VERSION(DRIVER_VERSION);
+module_param(debug, bool, S_IRUGO | S_IWUSR);
+MODULE_PARM_DESC(debug, "Debug enabled or not");
 
 module_param(xmas, bool, S_IRUGO | S_IWUSR);
 MODULE_PARM_DESC(xmas, "Xmas colors enabled or not");

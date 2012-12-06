@@ -158,8 +158,8 @@ struct xen_vbd {
 	struct block_device	*bdev;
 	/* Cached size parameter. */
 	sector_t		size;
-	unsigned int		flush_support:1;
-	unsigned int		discard_secure:1;
+	bool			flush_support;
+	bool			discard_secure;
 };
 
 struct backend_info;

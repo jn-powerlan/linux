@@ -141,10 +141,8 @@ static int __devinit gfb_probe(struct platform_device *op)
 
 	gp->fb_base = of_ioremap(&op->resource[6], 0,
 				 gp->fb_size, "gfb fb");
-	if (!gp->fb_base) {
-		err = -ENOMEM;
+	if (!gp->fb_base)
 		goto err_release_fb;
-	}
 
 	err = gfb_set_fbinfo(gp);
 	if (err)

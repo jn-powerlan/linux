@@ -24,13 +24,9 @@
 #include <linux/netfilter/ipset/ip_set_timeout.h>
 #include <linux/netfilter/ipset/ip_set_hash.h>
 
-#define REVISION_MIN	0
-/*			1    nomatch flag support added */
-#define REVISION_MAX	2 /* /0 support added */
-
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Jozsef Kadlecsik <kadlec@blackhole.kfki.hu>");
-IP_SET_MODULE_DESC("hash:net,iface", REVISION_MIN, REVISION_MAX);
+MODULE_DESCRIPTION("hash:net,iface type of IP sets");
 MODULE_ALIAS("ip_set_hash:net,iface");
 
 /* Interface name rbtree */
@@ -144,7 +140,7 @@ struct hash_netiface4_elem_hashed {
 	u8 physdev;
 	u8 cidr;
 	u8 nomatch;
-	u8 elem;
+	u8 padding;
 };
 
 #define HKEY_DATALEN	sizeof(struct hash_netiface4_elem_hashed)
@@ -155,7 +151,7 @@ struct hash_netiface4_elem {
 	u8 physdev;
 	u8 cidr;
 	u8 nomatch;
-	u8 elem;
+	u8 padding;
 	const char *iface;
 };
 
@@ -165,7 +161,7 @@ struct hash_netiface4_telem {
 	u8 physdev;
 	u8 cidr;
 	u8 nomatch;
-	u8 elem;
+	u8 padding;
 	const char *iface;
 	unsigned long timeout;
 };
@@ -185,14 +181,18 @@ hash_netiface4_data_equal(const struct hash_netiface4_elem *ip1,
 static inline bool
 hash_netiface4_data_isnull(const struct hash_netiface4_elem *elem)
 {
-	return elem->elem == 0;
+	return elem->cidr == 0;
 }
 
 static inline void
 hash_netiface4_data_copy(struct hash_netiface4_elem *dst,
 			 const struct hash_netiface4_elem *src)
 {
-	memcpy(dst, src, sizeof(*dst));
+	dst->ip = src->ip;
+	dst->cidr = src->cidr;
+	dst->physdev = src->physdev;
+	dst->iface = src->iface;
+	dst->nomatch = src->nomatch;
 }
 
 static inline void
@@ -201,10 +201,10 @@ hash_netiface4_data_flags(struct hash_netiface4_elem *dst, u32 flags)
 	dst->nomatch = flags & IPSET_FLAG_NOMATCH;
 }
 
-static inline int
+static inline bool
 hash_netiface4_data_match(const struct hash_netiface4_elem *elem)
 {
-	return elem->nomatch ? -ENOTEMPTY : 1;
+	return !elem->nomatch;
 }
 
 static inline void
@@ -217,7 +217,7 @@ hash_netiface4_data_netmask(struct hash_netiface4_elem *elem, u8 cidr)
 static inline void
 hash_netiface4_data_zero_out(struct hash_netiface4_elem *elem)
 {
-	elem->elem = 0;
+	elem->cidr = 0;
 }
 
 static bool
@@ -277,7 +277,7 @@ static inline void
 hash_netiface4_data_next(struct ip_set_hash *h,
 			 const struct hash_netiface4_elem *d)
 {
-	h->next.ip = d->ip;
+	h->next.ip = ntohl(d->ip);
 }
 
 static int
@@ -288,8 +288,7 @@ hash_netiface4_kadt(struct ip_set *set, const struct sk_buff *skb,
 	struct ip_set_hash *h = set->data;
 	ipset_adtfn adtfn = set->variant->adt[adt];
 	struct hash_netiface4_elem data = {
-		.cidr = h->nets[0].cidr ? h->nets[0].cidr : HOST_MASK,
-		.elem = 1,
+		.cidr = h->nets[0].cidr ? h->nets[0].cidr : HOST_MASK
 	};
 	int ret;
 
@@ -340,7 +339,7 @@ hash_netiface4_uadt(struct ip_set *set, struct nlattr *tb[],
 {
 	struct ip_set_hash *h = set->data;
 	ipset_adtfn adtfn = set->variant->adt[adt];
-	struct hash_netiface4_elem data = { .cidr = HOST_MASK, .elem = 1 };
+	struct hash_netiface4_elem data = { .cidr = HOST_MASK };
 	u32 ip = 0, ip_to, last;
 	u32 timeout = h->timeout;
 	char iface[IFNAMSIZ];
@@ -361,7 +360,7 @@ hash_netiface4_uadt(struct ip_set *set, struct nlattr *tb[],
 
 	if (tb[IPSET_ATTR_CIDR]) {
 		data.cidr = nla_get_u8(tb[IPSET_ATTR_CIDR]);
-		if (data.cidr > HOST_MASK)
+		if (!data.cidr || data.cidr > HOST_MASK)
 			return -IPSET_ERR_INVALID_CIDR;
 	}
 
@@ -390,6 +389,7 @@ hash_netiface4_uadt(struct ip_set *set, struct nlattr *tb[],
 		if (adt == IPSET_ADD && (cadt_flags & IPSET_FLAG_NOMATCH))
 			flags |= (cadt_flags << 16);
 	}
+
 	if (adt == IPSET_TEST || !tb[IPSET_ATTR_IP_TO]) {
 		data.ip = htonl(ip & ip_set_hostmask(data.cidr));
 		ret = adtfn(set, &data, timeout, flags);
@@ -409,7 +409,7 @@ hash_netiface4_uadt(struct ip_set *set, struct nlattr *tb[],
 	}
 
 	if (retried)
-		ip = ntohl(h->next.ip);
+		ip = h->next.ip;
 	while (!after(ip, ip_to)) {
 		data.ip = htonl(ip);
 		last = ip_set_range_to_cidr(ip, ip_to, &data.cidr);
@@ -442,7 +442,7 @@ struct hash_netiface6_elem_hashed {
 	u8 physdev;
 	u8 cidr;
 	u8 nomatch;
-	u8 elem;
+	u8 padding;
 };
 
 #define HKEY_DATALEN	sizeof(struct hash_netiface6_elem_hashed)
@@ -452,7 +452,7 @@ struct hash_netiface6_elem {
 	u8 physdev;
 	u8 cidr;
 	u8 nomatch;
-	u8 elem;
+	u8 padding;
 	const char *iface;
 };
 
@@ -461,7 +461,7 @@ struct hash_netiface6_telem {
 	u8 physdev;
 	u8 cidr;
 	u8 nomatch;
-	u8 elem;
+	u8 padding;
 	const char *iface;
 	unsigned long timeout;
 };
@@ -481,7 +481,7 @@ hash_netiface6_data_equal(const struct hash_netiface6_elem *ip1,
 static inline bool
 hash_netiface6_data_isnull(const struct hash_netiface6_elem *elem)
 {
-	return elem->elem == 0;
+	return elem->cidr == 0;
 }
 
 static inline void
@@ -497,16 +497,16 @@ hash_netiface6_data_flags(struct hash_netiface6_elem *dst, u32 flags)
 	dst->nomatch = flags & IPSET_FLAG_NOMATCH;
 }
 
-static inline int
+static inline bool
 hash_netiface6_data_match(const struct hash_netiface6_elem *elem)
 {
-	return elem->nomatch ? -ENOTEMPTY : 1;
+	return !elem->nomatch;
 }
 
 static inline void
 hash_netiface6_data_zero_out(struct hash_netiface6_elem *elem)
 {
-	elem->elem = 0;
+	elem->cidr = 0;
 }
 
 static inline void
@@ -590,8 +590,7 @@ hash_netiface6_kadt(struct ip_set *set, const struct sk_buff *skb,
 	struct ip_set_hash *h = set->data;
 	ipset_adtfn adtfn = set->variant->adt[adt];
 	struct hash_netiface6_elem data = {
-		.cidr = h->nets[0].cidr ? h->nets[0].cidr : HOST_MASK,
-		.elem = 1,
+		.cidr = h->nets[0].cidr ? h->nets[0].cidr : HOST_MASK
 	};
 	int ret;
 
@@ -638,7 +637,7 @@ hash_netiface6_uadt(struct ip_set *set, struct nlattr *tb[],
 {
 	struct ip_set_hash *h = set->data;
 	ipset_adtfn adtfn = set->variant->adt[adt];
-	struct hash_netiface6_elem data = { .cidr = HOST_MASK, .elem = 1 };
+	struct hash_netiface6_elem data = { .cidr = HOST_MASK };
 	u32 timeout = h->timeout;
 	char iface[IFNAMSIZ];
 	int ret;
@@ -660,7 +659,7 @@ hash_netiface6_uadt(struct ip_set *set, struct nlattr *tb[],
 
 	if (tb[IPSET_ATTR_CIDR])
 		data.cidr = nla_get_u8(tb[IPSET_ATTR_CIDR]);
-	if (data.cidr > HOST_MASK)
+	if (!data.cidr || data.cidr > HOST_MASK)
 		return -IPSET_ERR_INVALID_CIDR;
 	ip6_netmask(&data.ip, data.cidr);
 
@@ -774,12 +773,11 @@ hash_netiface_create(struct ip_set *set, struct nlattr *tb[], u32 flags)
 static struct ip_set_type hash_netiface_type __read_mostly = {
 	.name		= "hash:net,iface",
 	.protocol	= IPSET_PROTOCOL,
-	.features	= IPSET_TYPE_IP | IPSET_TYPE_IFACE |
-			  IPSET_TYPE_NOMATCH,
+	.features	= IPSET_TYPE_IP | IPSET_TYPE_IFACE,
 	.dimension	= IPSET_DIM_TWO,
 	.family		= NFPROTO_UNSPEC,
-	.revision_min	= REVISION_MIN,
-	.revision_max	= REVISION_MAX,
+	.revision_min	= 0,
+	.revision_max	= 1,	/* nomatch flag support added */
 	.create		= hash_netiface_create,
 	.create_policy	= {
 		[IPSET_ATTR_HASHSIZE]	= { .type = NLA_U32 },

@@ -141,11 +141,7 @@ EXPORT_SYMBOL_GPL(vga_default_device);
 
 void vga_set_default_device(struct pci_dev *pdev)
 {
-	if (vga_default == pdev)
-		return;
-
-	pci_dev_put(vga_default);
-	vga_default = pci_dev_get(pdev);
+	vga_default = pdev;
 }
 #endif
 
@@ -581,7 +577,7 @@ static bool vga_arbiter_add_pci_device(struct pci_dev *pdev)
 #ifndef __ARCH_HAS_VGA_DEFAULT_DEVICE
 	if (vga_default == NULL &&
 	    ((vgadev->owns & VGA_RSRC_LEGACY_MASK) == VGA_RSRC_LEGACY_MASK))
-		vga_set_default_device(pdev);
+		vga_default = pci_dev_get(pdev);
 #endif
 
 	vga_arbiter_check_bridge_sharing(vgadev);
@@ -617,8 +613,10 @@ static bool vga_arbiter_del_pci_device(struct pci_dev *pdev)
 	}
 
 #ifndef __ARCH_HAS_VGA_DEFAULT_DEVICE
-	if (vga_default == pdev)
-		vga_set_default_device(NULL);
+	if (vga_default == pdev) {
+		pci_dev_put(vga_default);
+		vga_default = NULL;
+	}
 #endif
 
 	if (vgadev->decodes & (VGA_RSRC_LEGACY_IO | VGA_RSRC_LEGACY_MEM))
@@ -1068,6 +1066,7 @@ static ssize_t vga_arb_write(struct file *file, const char __user * buf,
 		}
 
 	} else if (strncmp(curr_pos, "target ", 7) == 0) {
+		struct pci_bus *pbus;
 		unsigned int domain, bus, devfn;
 		struct vga_device *vgadev;
 
@@ -1086,11 +1085,19 @@ static ssize_t vga_arb_write(struct file *file, const char __user * buf,
 			pr_debug("vgaarb: %s ==> %x:%x:%x.%x\n", curr_pos,
 				domain, bus, PCI_SLOT(devfn), PCI_FUNC(devfn));
 
-			pdev = pci_get_domain_bus_and_slot(domain, bus, devfn);
+			pbus = pci_find_bus(domain, bus);
+			pr_debug("vgaarb: pbus %p\n", pbus);
+			if (pbus == NULL) {
+				pr_err("vgaarb: invalid PCI domain and/or bus address %x:%x\n",
+					domain, bus);
+				ret_val = -ENODEV;
+				goto done;
+			}
+			pdev = pci_get_slot(pbus, devfn);
 			pr_debug("vgaarb: pdev %p\n", pdev);
 			if (!pdev) {
-				pr_err("vgaarb: invalid PCI address %x:%x:%x\n",
-					domain, bus, devfn);
+				pr_err("vgaarb: invalid PCI address %x:%x\n",
+					bus, devfn);
 				ret_val = -ENODEV;
 				goto done;
 			}

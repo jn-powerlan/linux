@@ -57,7 +57,7 @@ static inline u32 mc_readl(struct tegra20_mc *mc, u32 offs)
 
 	if (offs < 0x24)
 		val = readl(mc->regs[0] + offs);
-	else if (offs < 0x400)
+	if (offs < 0x400)
 		val = readl(mc->regs[1] + offs - 0x3c);
 
 	return val;
@@ -65,10 +65,14 @@ static inline u32 mc_readl(struct tegra20_mc *mc, u32 offs)
 
 static inline void mc_writel(struct tegra20_mc *mc, u32 val, u32 offs)
 {
-	if (offs < 0x24)
+	if (offs < 0x24) {
 		writel(val, mc->regs[0] + offs);
-	else if (offs < 0x400)
+		return;
+	}
+	if (offs < 0x400) {
 		writel(val, mc->regs[1] + offs - 0x3c);
+		return;
+	}
 }
 
 static const char * const tegra20_mc_client[] = {

@@ -34,9 +34,10 @@ static inline void __clear_cache_all(void)
 {
 #ifdef CACHE_INVALIDATE
 	__asm__ __volatile__ (
-		"movec	%0, %%CACR\n\t"
+		"movel	%0, %%d0\n\t"
+		"movec	%%d0, %%CACR\n\t"
 		"nop\n\t"
-		: : "r" (CACHE_INVALIDATE) );
+		: : "i" (CACHE_INVALIDATE) : "d0" );
 #endif
 }
 
@@ -57,9 +58,10 @@ static inline void __flush_icache_all(void)
 {
 #ifdef CACHE_INVALIDATEI
 	__asm__ __volatile__ (
-		"movec	%0, %%CACR\n\t"
+		"movel	%0, %%d0\n\t"
+		"movec	%%d0, %%CACR\n\t"
 		"nop\n\t"
-		: : "r" (CACHE_INVALIDATEI) );
+		: : "i" (CACHE_INVALIDATEI) : "d0" );
 #endif
 }
 
@@ -70,18 +72,19 @@ static inline void __flush_dcache_all(void)
 #endif
 #ifdef CACHE_INVALIDATED
 	__asm__ __volatile__ (
-		"movec	%0, %%CACR\n\t"
+		"movel	%0, %%d0\n\t"
+		"movec	%%d0, %%CACR\n\t"
 		"nop\n\t"
-		: : "r" (CACHE_INVALIDATED) );
+		: : "i" (CACHE_INVALIDATED) : "d0" );
 #else
-	/* Flush the write buffer */
+	/* Flush the wrtite buffer */
 	__asm__ __volatile__ ( "nop" );
 #endif
 }
 
 /*
  * Push cache entries at supplied address. We want to write back any dirty
- * data and then invalidate the cache lines associated with this address.
+ * data and the invalidate the cache lines associated with this address.
  */
 static inline void cache_push(unsigned long paddr, int len)
 {

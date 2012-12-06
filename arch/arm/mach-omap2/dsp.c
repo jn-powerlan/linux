@@ -30,7 +30,7 @@
 #include <plat/omap-pm.h>
 #endif
 
-#include <linux/platform_data/dsp-omap.h>
+#include <plat/dsp.h>
 
 static struct platform_device *omap_dsp_pdev;
 

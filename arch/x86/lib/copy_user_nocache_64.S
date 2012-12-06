@@ -15,7 +15,6 @@
 #include <asm/asm-offsets.h>
 #include <asm/thread_info.h>
 #include <asm/asm.h>
-#include <asm/smap.h>
 
 	.macro ALIGN_DESTINATION
 #ifdef FIX_ALIGNMENT
@@ -49,7 +48,6 @@
  */
 ENTRY(__copy_user_nocache)
 	CFI_STARTPROC
-	ASM_STAC
 	cmpl $8,%edx
 	jb 20f		/* less then 8 bytes, go to byte copy loop */
 	ALIGN_DESTINATION
@@ -97,7 +95,6 @@ ENTRY(__copy_user_nocache)
 	decl %ecx
 	jnz 21b
 23:	xorl %eax,%eax
-	ASM_CLAC
 	sfence
 	ret
 

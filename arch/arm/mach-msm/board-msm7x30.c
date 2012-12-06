@@ -38,7 +38,8 @@
 #include "devices.h"
 #include "gpiomux.h"
 #include "proc_comm.h"
-#include "common.h"
+
+extern struct sys_timer msm_timer;
 
 static void __init msm7x30_fixup(struct tag *tag, char **cmdline,
 		struct meminfo *mi)
@@ -131,7 +132,7 @@ MACHINE_START(MSM7X30_SURF, "QCT MSM7X30 SURF")
 	.init_irq = msm7x30_init_irq,
 	.init_machine = msm7x30_init,
 	.init_late = msm7x30_init_late,
-	.timer = &msm7x30_timer,
+	.timer = &msm_timer,
 MACHINE_END
 
 MACHINE_START(MSM7X30_FFA, "QCT MSM7X30 FFA")
@@ -142,7 +143,7 @@ MACHINE_START(MSM7X30_FFA, "QCT MSM7X30 FFA")
 	.init_irq = msm7x30_init_irq,
 	.init_machine = msm7x30_init,
 	.init_late = msm7x30_init_late,
-	.timer = &msm7x30_timer,
+	.timer = &msm_timer,
 MACHINE_END
 
 MACHINE_START(MSM7X30_FLUID, "QCT MSM7X30 FLUID")
@@ -153,5 +154,5 @@ MACHINE_START(MSM7X30_FLUID, "QCT MSM7X30 FLUID")
 	.init_irq = msm7x30_init_irq,
 	.init_machine = msm7x30_init,
 	.init_late = msm7x30_init_late,
-	.timer = &msm7x30_timer,
+	.timer = &msm_timer,
 MACHINE_END

@@ -27,7 +27,6 @@
 #include <linux/mmc/host.h>
 
 #include <video/platform_lcd.h>
-#include <video/samsung_fimd.h>
 
 #include <asm/hardware/vic.h>
 #include <asm/mach/arch.h>
@@ -46,13 +45,14 @@
 #include <plat/clock.h>
 #include <plat/devs.h>
 #include <plat/cpu.h>
-#include <linux/platform_data/i2c-s3c2410.h>
+#include <plat/iic.h>
 #include <plat/pll.h>
 #include <plat/adc.h>
-#include <linux/platform_data/touchscreen-s3c2410.h>
+#include <plat/ts.h>
 #include <plat/s5p-time.h>
 #include <plat/backlight.h>
 #include <plat/fb.h>
+#include <plat/regs-fb.h>
 #include <plat/sdhci.h>
 
 #include "common.h"

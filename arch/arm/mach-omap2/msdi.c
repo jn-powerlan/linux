@@ -23,7 +23,6 @@
 
 #include <linux/kernel.h>
 #include <linux/err.h>
-#include <linux/platform_data/gpio-omap.h>
 
 #include <plat/omap_hwmod.h>
 #include <plat/omap_device.h>

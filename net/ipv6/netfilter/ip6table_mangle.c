@@ -97,7 +97,9 @@ static int __net_init ip6table_mangle_net_init(struct net *net)
 	net->ipv6.ip6table_mangle =
 		ip6t_register_table(net, &packet_mangler, repl);
 	kfree(repl);
-	return PTR_RET(net->ipv6.ip6table_mangle);
+	if (IS_ERR(net->ipv6.ip6table_mangle))
+		return PTR_ERR(net->ipv6.ip6table_mangle);
+	return 0;
 }
 
 static void __net_exit ip6table_mangle_net_exit(struct net *net)

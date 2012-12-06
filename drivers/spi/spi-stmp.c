@@ -594,7 +594,9 @@ static int __devexit stmp_spi_remove(struct platform_device *dev)
 	struct stmp_spi *ss;
 	struct spi_master *master;
 
-	master = spi_master_get(platform_get_drvdata(dev));
+	master = platform_get_drvdata(dev);
+	if (master == NULL)
+		goto out0;
 	ss = spi_master_get_devdata(master);
 
 	spi_unregister_master(master);
@@ -607,6 +609,8 @@ static int __devexit stmp_spi_remove(struct platform_device *dev)
 	destroy_workqueue(ss->workqueue);
 	iounmap(ss->regs);
 	spi_master_put(master);
+	platform_set_drvdata(dev, NULL);
+out0:
 	return 0;
 }
 

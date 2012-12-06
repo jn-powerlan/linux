@@ -21,7 +21,6 @@
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
 
-#include <video/samsung_fimd.h>
 #include <mach/map.h>
 #include <mach/regs-gpio.h>
 
@@ -29,6 +28,7 @@
 #include <plat/devs.h>
 #include <plat/fb.h>
 #include <plat/gpio-cfg.h>
+#include <plat/regs-fb-v4.h>
 
 #include "common.h"
 #include "mach-smartq.h"

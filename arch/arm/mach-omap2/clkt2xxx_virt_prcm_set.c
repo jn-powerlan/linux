@@ -33,11 +33,11 @@
 #include <linux/cpufreq.h>
 #include <linux/slab.h>
 
+#include <plat/cpu.h>
 #include <plat/clock.h>
 #include <plat/sram.h>
 #include <plat/sdrc.h>
 
-#include "soc.h"
 #include "clock.h"
 #include "clock2xxx.h"
 #include "opp2xxx.h"
@@ -68,15 +68,14 @@ unsigned long omap2_table_mpu_recalc(struct clk *clk)
 long omap2_round_to_table_rate(struct clk *clk, unsigned long rate)
 {
 	const struct prcm_config *ptr;
-	long highest_rate, sys_clk_rate;
+	long highest_rate;
 
 	highest_rate = -EINVAL;
-	sys_clk_rate = __clk_get_rate(sclk);
 
 	for (ptr = rate_table; ptr->mpu_speed; ptr++) {
 		if (!(ptr->flags & cpu_mask))
 			continue;
-		if (ptr->xtal_speed != sys_clk_rate)
+		if (ptr->xtal_speed != sclk->rate)
 			continue;
 
 		highest_rate = ptr->mpu_speed;
@@ -95,15 +94,12 @@ int omap2_select_table_rate(struct clk *clk, unsigned long rate)
 	const struct prcm_config *prcm;
 	unsigned long found_speed = 0;
 	unsigned long flags;
-	long sys_clk_rate;
-
-	sys_clk_rate = __clk_get_rate(sclk);
 
 	for (prcm = rate_table; prcm->mpu_speed; prcm++) {
 		if (!(prcm->flags & cpu_mask))
 			continue;
 
-		if (prcm->xtal_speed != sys_clk_rate)
+		if (prcm->xtal_speed != sclk->rate)
 			continue;
 
 		if (prcm->mpu_speed <= rate) {

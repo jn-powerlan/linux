@@ -232,11 +232,14 @@ int pinmux_request_gpio(struct pinctrl_dev *pctldev,
 			struct pinctrl_gpio_range *range,
 			unsigned pin, unsigned gpio)
 {
+	char gpiostr[16];
 	const char *owner;
 	int ret;
 
 	/* Conjure some name stating what chip and pin this is taken by */
-	owner = kasprintf(GFP_KERNEL, "%s:%d", range->name, gpio);
+	snprintf(gpiostr, 15, "%s:%d", range->name, gpio);
+
+	owner = kstrdup(gpiostr, GFP_KERNEL);
 	if (!owner)
 		return -EINVAL;
 

@@ -45,9 +45,25 @@
 
 #include "platform.h"
 
-const char *get_system_type(void);
+static const char *board_type_str(void)
+{
+	switch (BCSR_WHOAMI_BOARD(bcsr_read(BCSR_WHOAMI))) {
+	case BCSR_WHOAMI_PB1200_DDR1:
+	case BCSR_WHOAMI_PB1200_DDR2:
+		return "PB1200";
+	case BCSR_WHOAMI_DB1200:
+		return "DB1200";
+	default:
+		return "(unknown)";
+	}
+}
 
-static int __init db1200_detect_board(void)
+const char *get_system_type(void)
+{
+	return board_type_str();
+}
+
+static int __init detect_board(void)
 {
 	int bid;
 
@@ -80,17 +96,19 @@ static int __init db1200_detect_board(void)
 	return 1;	/* it's neither */
 }
 
-int __init db1200_board_setup(void)
+void __init board_setup(void)
 {
 	unsigned long freq0, clksrc, div, pfc;
 	unsigned short whoami;
 
-	if (db1200_detect_board())
-		return -ENODEV;
+	if (detect_board()) {
+		printk(KERN_ERR "NOT running on a DB1200/PB1200 board!\n");
+		return;
+	}
 
 	whoami = bcsr_read(BCSR_WHOAMI);
 	printk(KERN_INFO "Alchemy/AMD/RMI %s Board, CPLD Rev %d"
-		"  Board-ID %d  Daughtercard ID %d\n", get_system_type(),
+		"  Board-ID %d  Daughtercard ID %d\n", board_type_str(),
 		(whoami >> 4) & 0xf, (whoami >> 8) & 0xf, whoami & 0xf);
 
 	/* SMBus/SPI on PSC0, Audio on PSC1 */
@@ -120,8 +138,6 @@ int __init db1200_board_setup(void)
 	clksrc = SYS_CS_MUX_FQ0 << SYS_CS_ME0_BIT;
 	__raw_writel(clksrc, (void __iomem *)SYS_CLKSRC);
 	wmb();
-
-	return 0;
 }
 
 /******************************************************************************/
@@ -780,7 +796,7 @@ static int __init pb1200_res_fixup(void)
 	return 0;
 }
 
-int __init db1200_dev_setup(void)
+static int __init db1200_dev_init(void)
 {
 	unsigned long pfc;
 	unsigned short sw;
@@ -830,7 +846,7 @@ int __init db1200_dev_setup(void)
 	gpio_request(215, "otg-vbus");
 	gpio_direction_output(215, 1);
 
-	printk(KERN_INFO "%s device configuration:\n", get_system_type());
+	printk(KERN_INFO "%s device configuration:\n", board_type_str());
 
 	sw = bcsr_read(BCSR_SWITCHES);
 	if (sw & BCSR_SWITCHES_DIP_8) {
@@ -906,3 +922,4 @@ int __init db1200_dev_setup(void)
 
 	return 0;
 }
+device_initcall(db1200_dev_init);

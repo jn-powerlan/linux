@@ -279,18 +279,19 @@ static struct platform_device	*microcode_pdev;
 static int reload_for_cpu(int cpu)
 {
 	struct ucode_cpu_info *uci = ucode_cpu_info + cpu;
-	enum ucode_state ustate;
 	int err = 0;
 
-	if (!uci->valid)
-		return err;
+	if (uci->valid) {
+		enum ucode_state ustate;
 
-	ustate = microcode_ops->request_microcode_fw(cpu, &microcode_pdev->dev, true);
-	if (ustate == UCODE_OK)
-		apply_microcode_on_target(cpu);
-	else
-		if (ustate == UCODE_ERROR)
-			err = -EINVAL;
+		ustate = microcode_ops->request_microcode_fw(cpu, &microcode_pdev->dev);
+		if (ustate == UCODE_OK)
+			apply_microcode_on_target(cpu);
+		else
+			if (ustate == UCODE_ERROR)
+				err = -EINVAL;
+	}
+
 	return err;
 }
 
@@ -372,15 +373,18 @@ static void microcode_fini_cpu(int cpu)
 
 static enum ucode_state microcode_resume_cpu(int cpu)
 {
-	pr_debug("CPU%d updated upon resume\n", cpu);
+	struct ucode_cpu_info *uci = ucode_cpu_info + cpu;
 
-	if (apply_microcode_on_target(cpu))
-		return UCODE_ERROR;
+	if (!uci->mc)
+		return UCODE_NFOUND;
+
+	pr_debug("CPU%d updated upon resume\n", cpu);
+	apply_microcode_on_target(cpu);
 
 	return UCODE_OK;
 }
 
-static enum ucode_state microcode_init_cpu(int cpu, bool refresh_fw)
+static enum ucode_state microcode_init_cpu(int cpu)
 {
 	enum ucode_state ustate;
 
@@ -391,8 +395,7 @@ static enum ucode_state microcode_init_cpu(int cpu, bool refresh_fw)
 	if (system_state != SYSTEM_RUNNING)
 		return UCODE_NFOUND;
 
-	ustate = microcode_ops->request_microcode_fw(cpu, &microcode_pdev->dev,
-						     refresh_fw);
+	ustate = microcode_ops->request_microcode_fw(cpu, &microcode_pdev->dev);
 
 	if (ustate == UCODE_OK) {
 		pr_debug("CPU%d updated upon init\n", cpu);
@@ -405,11 +408,14 @@ static enum ucode_state microcode_init_cpu(int cpu, bool refresh_fw)
 static enum ucode_state microcode_update_cpu(int cpu)
 {
 	struct ucode_cpu_info *uci = ucode_cpu_info + cpu;
+	enum ucode_state ustate;
 
 	if (uci->valid)
-		return microcode_resume_cpu(cpu);
+		ustate = microcode_resume_cpu(cpu);
+	else
+		ustate = microcode_init_cpu(cpu);
 
-	return microcode_init_cpu(cpu, false);
+	return ustate;
 }
 
 static int mc_device_add(struct device *dev, struct subsys_interface *sif)
@@ -425,7 +431,7 @@ static int mc_device_add(struct device *dev, struct subsys_interface *sif)
 	if (err)
 		return err;
 
-	if (microcode_init_cpu(cpu, true) == UCODE_ERROR)
+	if (microcode_init_cpu(cpu) == UCODE_ERROR)
 		return -EINVAL;
 
 	return err;
@@ -474,41 +480,34 @@ mc_cpu_callback(struct notifier_block *nb, unsigned long action, void *hcpu)
 	struct device *dev;
 
 	dev = get_cpu_device(cpu);
-
-	switch (action & ~CPU_TASKS_FROZEN) {
+	switch (action) {
 	case CPU_ONLINE:
+	case CPU_ONLINE_FROZEN:
 		microcode_update_cpu(cpu);
-		pr_debug("CPU%d added\n", cpu);
-		/*
-		 * "break" is missing on purpose here because we want to fall
-		 * through in order to create the sysfs group.
-		 */
-
 	case CPU_DOWN_FAILED:
+	case CPU_DOWN_FAILED_FROZEN:
+		pr_debug("CPU%d added\n", cpu);
 		if (sysfs_create_group(&dev->kobj, &mc_attr_group))
 			pr_err("Failed to create group for CPU%d\n", cpu);
 		break;
-
 	case CPU_DOWN_PREPARE:
+	case CPU_DOWN_PREPARE_FROZEN:
 		/* Suspend is in progress, only remove the interface */
 		sysfs_remove_group(&dev->kobj, &mc_attr_group);
 		pr_debug("CPU%d removed\n", cpu);
 		break;
 
 	/*
-	 * case CPU_DEAD:
-	 *
 	 * When a CPU goes offline, don't free up or invalidate the copy of
 	 * the microcode in kernel memory, so that we can reuse it when the
 	 * CPU comes back online without unnecessarily requesting the userspace
 	 * for it again.
 	 */
-	}
-
-	/* The CPU refused to come up during a system resume */
-	if (action == CPU_UP_CANCELED_FROZEN)
+	case CPU_UP_CANCELED_FROZEN:
+		/* The CPU refused to come up during a system resume */
 		microcode_fini_cpu(cpu);
-
+		break;
+	}
 	return NOTIFY_OK;
 }
 

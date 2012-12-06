@@ -94,22 +94,25 @@ static const struct nla_policy ifa_ipv4_policy[IFA_MAX+1] = {
 	[IFA_LABEL]     	= { .type = NLA_STRING, .len = IFNAMSIZ - 1 },
 };
 
-#define IN4_ADDR_HSIZE_SHIFT	8
-#define IN4_ADDR_HSIZE		(1U << IN4_ADDR_HSIZE_SHIFT)
-
+/* inet_addr_hash's shifting is dependent upon this IN4_ADDR_HSIZE
+ * value.  So if you change this define, make appropriate changes to
+ * inet_addr_hash as well.
+ */
+#define IN4_ADDR_HSIZE	256
 static struct hlist_head inet_addr_lst[IN4_ADDR_HSIZE];
 static DEFINE_SPINLOCK(inet_addr_hash_lock);
 
-static u32 inet_addr_hash(struct net *net, __be32 addr)
+static inline unsigned int inet_addr_hash(struct net *net, __be32 addr)
 {
-	u32 val = (__force u32) addr ^ net_hash_mix(net);
+	u32 val = (__force u32) addr ^ hash_ptr(net, 8);
 
-	return hash_32(val, IN4_ADDR_HSIZE_SHIFT);
+	return ((val ^ (val >> 8) ^ (val >> 16) ^ (val >> 24)) &
+		(IN4_ADDR_HSIZE - 1));
 }
 
 static void inet_hash_insert(struct net *net, struct in_ifaddr *ifa)
 {
-	u32 hash = inet_addr_hash(net, ifa->ifa_local);
+	unsigned int hash = inet_addr_hash(net, ifa->ifa_local);
 
 	spin_lock(&inet_addr_hash_lock);
 	hlist_add_head_rcu(&ifa->hash, &inet_addr_lst[hash]);
@@ -133,18 +136,18 @@ static void inet_hash_remove(struct in_ifaddr *ifa)
  */
 struct net_device *__ip_dev_find(struct net *net, __be32 addr, bool devref)
 {
-	u32 hash = inet_addr_hash(net, addr);
+	unsigned int hash = inet_addr_hash(net, addr);
 	struct net_device *result = NULL;
 	struct in_ifaddr *ifa;
 	struct hlist_node *node;
 
 	rcu_read_lock();
 	hlist_for_each_entry_rcu(ifa, node, &inet_addr_lst[hash], hash) {
-		if (ifa->ifa_local == addr) {
-			struct net_device *dev = ifa->ifa_dev->dev;
+		struct net_device *dev = ifa->ifa_dev->dev;
 
-			if (!net_eq(dev_net(dev), net))
-				continue;
+		if (!net_eq(dev_net(dev), net))
+			continue;
+		if (ifa->ifa_local == addr) {
 			result = dev;
 			break;
 		}
@@ -179,10 +182,10 @@ static void inet_del_ifa(struct in_device *in_dev, struct in_ifaddr **ifap,
 static void devinet_sysctl_register(struct in_device *idev);
 static void devinet_sysctl_unregister(struct in_device *idev);
 #else
-static void devinet_sysctl_register(struct in_device *idev)
+static inline void devinet_sysctl_register(struct in_device *idev)
 {
 }
-static void devinet_sysctl_unregister(struct in_device *idev)
+static inline void devinet_sysctl_unregister(struct in_device *idev)
 {
 }
 #endif
@@ -202,7 +205,7 @@ static void inet_rcu_free_ifa(struct rcu_head *head)
 	kfree(ifa);
 }
 
-static void inet_free_ifa(struct in_ifaddr *ifa)
+static inline void inet_free_ifa(struct in_ifaddr *ifa)
 {
 	call_rcu(&ifa->rcu_head, inet_rcu_free_ifa);
 }
@@ -311,7 +314,7 @@ int inet_addr_onlink(struct in_device *in_dev, __be32 a, __be32 b)
 }
 
 static void __inet_del_ifa(struct in_device *in_dev, struct in_ifaddr **ifap,
-			 int destroy, struct nlmsghdr *nlh, u32 portid)
+			 int destroy, struct nlmsghdr *nlh, u32 pid)
 {
 	struct in_ifaddr *promote = NULL;
 	struct in_ifaddr *ifa, *ifa1 = *ifap;
@@ -345,7 +348,7 @@ static void __inet_del_ifa(struct in_device *in_dev, struct in_ifaddr **ifap,
 				inet_hash_remove(ifa);
 				*ifap1 = ifa->ifa_next;
 
-				rtmsg_ifa(RTM_DELADDR, ifa, nlh, portid);
+				rtmsg_ifa(RTM_DELADDR, ifa, nlh, pid);
 				blocking_notifier_call_chain(&inetaddr_chain,
 						NETDEV_DOWN, ifa);
 				inet_free_ifa(ifa);
@@ -382,7 +385,7 @@ static void __inet_del_ifa(struct in_device *in_dev, struct in_ifaddr **ifap,
 	   is valid, it will try to restore deleted routes... Grr.
 	   So that, this order is correct.
 	 */
-	rtmsg_ifa(RTM_DELADDR, ifa1, nlh, portid);
+	rtmsg_ifa(RTM_DELADDR, ifa1, nlh, pid);
 	blocking_notifier_call_chain(&inetaddr_chain, NETDEV_DOWN, ifa1);
 
 	if (promote) {
@@ -395,7 +398,7 @@ static void __inet_del_ifa(struct in_device *in_dev, struct in_ifaddr **ifap,
 		}
 
 		promote->ifa_flags &= ~IFA_F_SECONDARY;
-		rtmsg_ifa(RTM_NEWADDR, promote, nlh, portid);
+		rtmsg_ifa(RTM_NEWADDR, promote, nlh, pid);
 		blocking_notifier_call_chain(&inetaddr_chain,
 				NETDEV_UP, promote);
 		for (ifa = next_sec; ifa; ifa = ifa->ifa_next) {
@@ -417,7 +420,7 @@ static void inet_del_ifa(struct in_device *in_dev, struct in_ifaddr **ifap,
 }
 
 static int __inet_insert_ifa(struct in_ifaddr *ifa, struct nlmsghdr *nlh,
-			     u32 portid)
+			     u32 pid)
 {
 	struct in_device *in_dev = ifa->ifa_dev;
 	struct in_ifaddr *ifa1, **ifap, **last_primary;
@@ -464,7 +467,7 @@ static int __inet_insert_ifa(struct in_ifaddr *ifa, struct nlmsghdr *nlh,
 	/* Send message first, then call notifier.
 	   Notifier will trigger FIB update, so that
 	   listeners of netlink will know about new ifaddr */
-	rtmsg_ifa(RTM_NEWADDR, ifa, nlh, portid);
+	rtmsg_ifa(RTM_NEWADDR, ifa, nlh, pid);
 	blocking_notifier_call_chain(&inetaddr_chain, NETDEV_UP, ifa);
 
 	return 0;
@@ -563,7 +566,7 @@ static int inet_rtm_deladdr(struct sk_buff *skb, struct nlmsghdr *nlh, void *arg
 		    !inet_ifa_match(nla_get_be32(tb[IFA_ADDRESS]), ifa)))
 			continue;
 
-		__inet_del_ifa(in_dev, ifap, 1, nlh, NETLINK_CB(skb).portid);
+		__inet_del_ifa(in_dev, ifap, 1, nlh, NETLINK_CB(skb).pid);
 		return 0;
 	}
 
@@ -649,14 +652,14 @@ static int inet_rtm_newaddr(struct sk_buff *skb, struct nlmsghdr *nlh, void *arg
 	if (IS_ERR(ifa))
 		return PTR_ERR(ifa);
 
-	return __inet_insert_ifa(ifa, nlh, NETLINK_CB(skb).portid);
+	return __inet_insert_ifa(ifa, nlh, NETLINK_CB(skb).pid);
 }
 
 /*
  *	Determine a default network mask, based on the IP address.
  */
 
-static int inet_abc_len(__be32 addr)
+static inline int inet_abc_len(__be32 addr)
 {
 	int rc = -1;	/* Something else, probably a multicast. */
 
@@ -1121,7 +1124,7 @@ skip:
 	}
 }
 
-static bool inetdev_valid_mtu(unsigned int mtu)
+static inline bool inetdev_valid_mtu(unsigned int mtu)
 {
 	return mtu >= 68;
 }
@@ -1236,7 +1239,7 @@ static struct notifier_block ip_netdev_notifier = {
 	.notifier_call = inetdev_event,
 };
 
-static size_t inet_nlmsg_size(void)
+static inline size_t inet_nlmsg_size(void)
 {
 	return NLMSG_ALIGN(sizeof(struct ifaddrmsg))
 	       + nla_total_size(4) /* IFA_ADDRESS */
@@ -1246,12 +1249,12 @@ static size_t inet_nlmsg_size(void)
 }
 
 static int inet_fill_ifaddr(struct sk_buff *skb, struct in_ifaddr *ifa,
-			    u32 portid, u32 seq, int event, unsigned int flags)
+			    u32 pid, u32 seq, int event, unsigned int flags)
 {
 	struct ifaddrmsg *ifm;
 	struct nlmsghdr  *nlh;
 
-	nlh = nlmsg_put(skb, portid, seq, event, sizeof(*ifm), flags);
+	nlh = nlmsg_put(skb, pid, seq, event, sizeof(*ifm), flags);
 	if (nlh == NULL)
 		return -EMSGSIZE;
 
@@ -1313,7 +1316,7 @@ static int inet_dump_ifaddr(struct sk_buff *skb, struct netlink_callback *cb)
 				if (ip_idx < s_ip_idx)
 					continue;
 				if (inet_fill_ifaddr(skb, ifa,
-					     NETLINK_CB(cb->skb).portid,
+					     NETLINK_CB(cb->skb).pid,
 					     cb->nlh->nlmsg_seq,
 					     RTM_NEWADDR, NLM_F_MULTI) <= 0) {
 					rcu_read_unlock();
@@ -1335,7 +1338,7 @@ done:
 }
 
 static void rtmsg_ifa(int event, struct in_ifaddr *ifa, struct nlmsghdr *nlh,
-		      u32 portid)
+		      u32 pid)
 {
 	struct sk_buff *skb;
 	u32 seq = nlh ? nlh->nlmsg_seq : 0;
@@ -1347,14 +1350,14 @@ static void rtmsg_ifa(int event, struct in_ifaddr *ifa, struct nlmsghdr *nlh,
 	if (skb == NULL)
 		goto errout;
 
-	err = inet_fill_ifaddr(skb, ifa, portid, seq, event, 0);
+	err = inet_fill_ifaddr(skb, ifa, pid, seq, event, 0);
 	if (err < 0) {
 		/* -EMSGSIZE implies BUG in inet_nlmsg_size() */
 		WARN_ON(err == -EMSGSIZE);
 		kfree_skb(skb);
 		goto errout;
 	}
-	rtnl_notify(skb, net, portid, RTNLGRP_IPV4_IFADDR, nlh, GFP_KERNEL);
+	rtnl_notify(skb, net, pid, RTNLGRP_IPV4_IFADDR, nlh, GFP_KERNEL);
 	return;
 errout:
 	if (err < 0)

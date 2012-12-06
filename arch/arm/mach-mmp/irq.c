@@ -153,8 +153,10 @@ static void icu_mux_irq_demux(unsigned int irq, struct irq_desc *desc)
 		status = readl_relaxed(data->reg_status) & ~mask;
 		if (status == 0)
 			break;
-		for_each_set_bit(n, &status, BITS_PER_LONG) {
+		n = find_first_bit(&status, BITS_PER_LONG);
+		while (n < BITS_PER_LONG) {
 			generic_handle_irq(icu_data[i].virq_base + n);
+			n = find_next_bit(&status, BITS_PER_LONG, n + 1);
 		}
 	}
 }

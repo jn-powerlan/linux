@@ -104,11 +104,6 @@
 #define LED_ACTIVE(mux, led)		(!!(mux & (0x0001 << led)))
 #define SHIFT_MASK(id)			(((id) - 1) * 2)
 
-enum lp5523_chip_id {
-	LP5523,
-	LP55231,
-};
-
 struct lp5523_engine {
 	int		id;
 	u8		mode;
@@ -155,7 +150,7 @@ static inline struct lp5523_chip *led_to_lp5523(struct lp5523_led *led)
 			    leds[led->id]);
 }
 
-static void lp5523_set_mode(struct lp5523_engine *engine, u8 mode);
+static int lp5523_set_mode(struct lp5523_engine *engine, u8 mode);
 static int lp5523_set_engine_mode(struct lp5523_engine *engine, u8 mode);
 static int lp5523_load_program(struct lp5523_engine *engine, const u8 *pattern);
 
@@ -182,7 +177,7 @@ static int lp5523_detect(struct i2c_client *client)
 	int ret;
 	u8 buf;
 
-	ret = lp5523_write(client, LP5523_REG_ENABLE, LP5523_ENABLE);
+	ret = lp5523_write(client, LP5523_REG_ENABLE, 0x40);
 	if (ret)
 		return ret;
 	ret = lp5523_read(client, LP5523_REG_ENABLE, &buf);
@@ -343,8 +338,7 @@ static int lp5523_mux_parse(const char *buf, u16 *mux, size_t len)
 {
 	int i;
 	u16 tmp_mux = 0;
-
-	len = min_t(int, len, LP5523_LEDS);
+	len = len < LP5523_LEDS ? len : LP5523_LEDS;
 	for (i = 0; i < len; i++) {
 		switch (buf[i]) {
 		case '1':
@@ -552,9 +546,6 @@ static int lp5523_do_store_load(struct lp5523_engine *engine,
 	unsigned cmd;
 	u8 pattern[LP5523_PROGRAM_LENGTH] = {0};
 
-	if (engine->mode != LP5523_CMD_LOAD)
-		return -EINVAL;
-
 	while ((offset < len - 1) && (i < LP5523_PROGRAM_LENGTH)) {
 		/* separate sscanfs because length is working only for %s */
 		ret = sscanf(buf + offset, "%2s%n ", c, &nrchars);
@@ -572,7 +563,12 @@ static int lp5523_do_store_load(struct lp5523_engine *engine,
 		goto fail;
 
 	mutex_lock(&chip->lock);
-	ret = lp5523_load_program(engine, pattern);
+
+	if (engine->mode == LP5523_CMD_LOAD)
+		ret = lp5523_load_program(engine, pattern);
+	else
+		ret = -EINVAL;
+
 	mutex_unlock(&chip->lock);
 
 	if (ret) {
@@ -759,7 +755,6 @@ static struct attribute *lp5523_attributes[] = {
 	&dev_attr_engine2_leds.attr,
 	&dev_attr_engine3_load.attr,
 	&dev_attr_engine3_leds.attr,
-	NULL,
 };
 
 static const struct attribute_group lp5523_group = {
@@ -794,28 +789,26 @@ static void lp5523_unregister_sysfs(struct i2c_client *client)
 /*--------------------------------------------------------------*/
 /*			Set chip operating mode			*/
 /*--------------------------------------------------------------*/
-static void lp5523_set_mode(struct lp5523_engine *engine, u8 mode)
+static int lp5523_set_mode(struct lp5523_engine *engine, u8 mode)
 {
+	int ret = 0;
+
 	/* if in that mode already do nothing, except for run */
 	if (mode == engine->mode && mode != LP5523_CMD_RUN)
-		return;
+		return 0;
 
-	switch (mode) {
-	case LP5523_CMD_RUN:
-		lp5523_run_program(engine);
-		break;
-	case LP5523_CMD_LOAD:
+	if (mode == LP5523_CMD_RUN) {
+		ret = lp5523_run_program(engine);
+	} else if (mode == LP5523_CMD_LOAD) {
 		lp5523_set_engine_mode(engine, LP5523_CMD_DISABLED);
 		lp5523_set_engine_mode(engine, LP5523_CMD_LOAD);
-		break;
-	case LP5523_CMD_DISABLED:
+	} else if (mode == LP5523_CMD_DISABLED) {
 		lp5523_set_engine_mode(engine, LP5523_CMD_DISABLED);
-		break;
-	default:
-		return;
 	}
 
 	engine->mode = mode;
+
+	return ret;
 }
 
 /*--------------------------------------------------------------*/
@@ -834,8 +827,7 @@ static int __init lp5523_init_engine(struct lp5523_engine *engine, int id)
 }
 
 static int __devinit lp5523_init_led(struct lp5523_led *led, struct device *dev,
-			   int chan, struct lp5523_platform_data *pdata,
-			   const char *chip_name)
+			   int chan, struct lp5523_platform_data *pdata)
 {
 	char name[32];
 	int res;
@@ -854,14 +846,10 @@ static int __devinit lp5523_init_led(struct lp5523_led *led, struct device *dev,
 			return -EINVAL;
 		}
 
-		if (pdata->led_config[chan].name) {
-			led->cdev.name = pdata->led_config[chan].name;
-		} else {
-			snprintf(name, sizeof(name), "%s:channel%d",
-				pdata->label ? : chip_name, chan);
-			led->cdev.name = name;
-		}
+		snprintf(name, sizeof(name), "%s:channel%d",
+			pdata->label ?: "lp5523", chan);
 
+		led->cdev.name = name;
 		led->cdev.brightness_set = lp5523_set_brightness;
 		res = led_classdev_register(dev, &led->cdev);
 		if (res < 0) {
@@ -929,7 +917,7 @@ static int __devinit lp5523_probe(struct i2c_client *client,
 	if (ret)
 		goto fail1;
 
-	dev_info(&client->dev, "%s Programmable led chip found\n", id->name);
+	dev_info(&client->dev, "LP5523 Programmable led chip found\n");
 
 	/* Initialize engines */
 	for (i = 0; i < ARRAY_SIZE(chip->engines); i++) {
@@ -957,8 +945,7 @@ static int __devinit lp5523_probe(struct i2c_client *client,
 		INIT_WORK(&chip->leds[led].brightness_work,
 			lp5523_led_brightness_work);
 
-		ret = lp5523_init_led(&chip->leds[led], &client->dev, i, pdata,
-				id->name);
+		ret = lp5523_init_led(&chip->leds[led], &client->dev, i, pdata);
 		if (ret) {
 			dev_err(&client->dev, "error initializing leds\n");
 			goto fail2;
@@ -983,7 +970,7 @@ static int __devinit lp5523_probe(struct i2c_client *client,
 fail2:
 	for (i = 0; i < chip->num_leds; i++) {
 		led_classdev_unregister(&chip->leds[i].cdev);
-		flush_work(&chip->leds[i].brightness_work);
+		cancel_work_sync(&chip->leds[i].brightness_work);
 	}
 fail1:
 	if (pdata->enable)
@@ -998,14 +985,11 @@ static int lp5523_remove(struct i2c_client *client)
 	struct lp5523_chip *chip = i2c_get_clientdata(client);
 	int i;
 
-	/* Disable engine mode */
-	lp5523_write(client, LP5523_REG_OP_MODE, LP5523_CMD_DISABLED);
-
 	lp5523_unregister_sysfs(client);
 
 	for (i = 0; i < chip->num_leds; i++) {
 		led_classdev_unregister(&chip->leds[i].cdev);
-		flush_work(&chip->leds[i].brightness_work);
+		cancel_work_sync(&chip->leds[i].brightness_work);
 	}
 
 	if (chip->pdata->enable)
@@ -1016,8 +1000,7 @@ static int lp5523_remove(struct i2c_client *client)
 }
 
 static const struct i2c_device_id lp5523_id[] = {
-	{ "lp5523",  LP5523 },
-	{ "lp55231", LP55231 },
+	{ "lp5523", 0 },
 	{ }
 };
 
@@ -1025,7 +1008,7 @@ MODULE_DEVICE_TABLE(i2c, lp5523_id);
 
 static struct i2c_driver lp5523_driver = {
 	.driver = {
-		.name	= "lp5523x",
+		.name	= "lp5523",
 	},
 	.probe		= lp5523_probe,
 	.remove		= lp5523_remove,

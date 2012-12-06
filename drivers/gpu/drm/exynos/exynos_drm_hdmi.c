@@ -11,7 +11,7 @@
  *
  */
 
-#include <drm/drmP.h>
+#include "drmP.h"
 
 #include <linux/kernel.h>
 #include <linux/wait.h>
@@ -29,11 +29,6 @@
 #define get_ctx_from_subdrv(subdrv)	container_of(subdrv,\
 					struct drm_hdmi_context, subdrv);
 
-/* Common hdmi subdrv needs to access the hdmi and mixer though context.
-* These should be initialied by the repective drivers */
-static struct exynos_drm_hdmi_context *hdmi_ctx;
-static struct exynos_drm_hdmi_context *mixer_ctx;
-
 /* these callback points shoud be set by specific drivers. */
 static struct exynos_hdmi_ops *hdmi_ops;
 static struct exynos_mixer_ops *mixer_ops;
@@ -45,18 +40,6 @@ struct drm_hdmi_context {
 
 	bool	enabled[MIXER_WIN_NR];
 };
-
-void exynos_hdmi_drv_attach(struct exynos_drm_hdmi_context *ctx)
-{
-	if (ctx)
-		hdmi_ctx = ctx;
-}
-
-void exynos_mixer_drv_attach(struct exynos_drm_hdmi_context *ctx)
-{
-	if (ctx)
-		mixer_ctx = ctx;
-}
 
 void exynos_hdmi_ops_register(struct exynos_hdmi_ops *ops)
 {
@@ -291,21 +274,10 @@ static void drm_mixer_disable(struct device *subdrv_dev, int zpos)
 	ctx->enabled[win] = false;
 }
 
-static void drm_mixer_wait_for_vblank(struct device *subdrv_dev)
-{
-	struct drm_hdmi_context *ctx = to_context(subdrv_dev);
-
-	DRM_DEBUG_KMS("%s\n", __FILE__);
-
-	if (mixer_ops && mixer_ops->wait_for_vblank)
-		mixer_ops->wait_for_vblank(ctx->mixer_ctx->ctx);
-}
-
 static struct exynos_drm_overlay_ops drm_hdmi_overlay_ops = {
 	.mode_set = drm_mixer_mode_set,
 	.commit = drm_mixer_commit,
 	.disable = drm_mixer_disable,
-	.wait_for_vblank = drm_mixer_wait_for_vblank,
 };
 
 static struct exynos_drm_manager hdmi_manager = {
@@ -320,30 +292,46 @@ static int hdmi_subdrv_probe(struct drm_device *drm_dev,
 {
 	struct exynos_drm_subdrv *subdrv = to_subdrv(dev);
 	struct drm_hdmi_context *ctx;
+	struct platform_device *pdev = to_platform_device(dev);
+	struct exynos_drm_common_hdmi_pd *pd;
 
 	DRM_DEBUG_KMS("%s\n", __FILE__);
 
-	if (!hdmi_ctx) {
-		DRM_ERROR("hdmi context not initialized.\n");
+	pd = pdev->dev.platform_data;
+
+	if (!pd) {
+		DRM_DEBUG_KMS("platform data is null.\n");
 		return -EFAULT;
 	}
 
-	if (!mixer_ctx) {
-		DRM_ERROR("mixer context not initialized.\n");
+	if (!pd->hdmi_dev) {
+		DRM_DEBUG_KMS("hdmi device is null.\n");
+		return -EFAULT;
+	}
+
+	if (!pd->mixer_dev) {
+		DRM_DEBUG_KMS("mixer device is null.\n");
 		return -EFAULT;
 	}
 
 	ctx = get_ctx_from_subdrv(subdrv);
 
-	if (!ctx) {
-		DRM_ERROR("no drm hdmi context.\n");
+	ctx->hdmi_ctx = (struct exynos_drm_hdmi_context *)
+				to_context(pd->hdmi_dev);
+	if (!ctx->hdmi_ctx) {
+		DRM_DEBUG_KMS("hdmi context is null.\n");
 		return -EFAULT;
 	}
 
-	ctx->hdmi_ctx = hdmi_ctx;
-	ctx->mixer_ctx = mixer_ctx;
-
 	ctx->hdmi_ctx->drm_dev = drm_dev;
+
+	ctx->mixer_ctx = (struct exynos_drm_hdmi_context *)
+				to_context(pd->mixer_dev);
+	if (!ctx->mixer_ctx) {
+		DRM_DEBUG_KMS("mixer context is null.\n");
+		return -EFAULT;
+	}
+
 	ctx->mixer_ctx->drm_dev = drm_dev;
 
 	return 0;

@@ -417,44 +417,6 @@ static void oz_ep_free(struct oz_port *port, struct oz_endpoint *ep)
 /*------------------------------------------------------------------------------
  * Context: softirq
  */
-void oz_complete_buffered_urb(struct oz_port *port, struct oz_endpoint *ep,
-			struct urb *urb)
-{
-	u8 data_len, available_space, copy_len;
-
-	memcpy(&data_len, &ep->buffer[ep->out_ix], sizeof(u8));
-	if (data_len <= urb->transfer_buffer_length)
-		available_space = data_len;
-	else
-		available_space = urb->transfer_buffer_length;
-
-	if (++ep->out_ix == ep->buffer_size)
-		ep->out_ix = 0;
-	copy_len = ep->buffer_size - ep->out_ix;
-	if (copy_len >= available_space)
-		copy_len = available_space;
-	memcpy(urb->transfer_buffer, &ep->buffer[ep->out_ix], copy_len);
-
-	if (copy_len < available_space) {
-		memcpy((urb->transfer_buffer + copy_len), ep->buffer,
-						(available_space - copy_len));
-		ep->out_ix = available_space - copy_len;
-	} else {
-		ep->out_ix += copy_len;
-	}
-	urb->actual_length = available_space;
-	if (ep->out_ix == ep->buffer_size)
-		ep->out_ix = 0;
-
-	ep->buffered_units--;
-	oz_trace("Trying to give back buffered frame of size=%d\n",
-						available_space);
-	oz_complete_urb(port->ozhcd->hcd, urb, 0, 0);
-}
-
-/*------------------------------------------------------------------------------
- * Context: softirq
- */
 static int oz_enqueue_ep_urb(struct oz_port *port, u8 ep_addr, int in_dir,
 			struct urb *urb, u8 req_id)
 {
@@ -490,18 +452,6 @@ static int oz_enqueue_ep_urb(struct oz_port *port, u8 ep_addr, int in_dir,
 		ep = port->in_ep[ep_addr];
 	else
 		ep = port->out_ep[ep_addr];
-
-	/*For interrupt endpoint check for buffered data
-	* & complete urb
-	*/
-	if (((ep->attrib & USB_ENDPOINT_XFERTYPE_MASK) == USB_ENDPOINT_XFER_INT)
-						 && ep->buffered_units > 0) {
-		oz_free_urb_link(urbl);
-		spin_unlock_bh(&port->ozhcd->hcd_lock);
-		oz_complete_buffered_urb(port, ep, urb);
-		return 0;
-	}
-
 	if (ep && port->hpd) {
 		list_add_tail(&urbl->link, &ep->urb_list);
 		if (!in_dir && ep_addr && (ep->credit < 0)) {
@@ -933,14 +883,13 @@ void oz_hcd_control_cnf(void *hport, u8 req_id, u8 rcode, u8 *data,
 	} else {
 		int copy_len;
 		oz_trace("VENDOR-CLASS - cnf\n");
-		if (data_len) {
-			if (data_len <= urb->transfer_buffer_length)
-				copy_len = data_len;
-			else
-				copy_len = urb->transfer_buffer_length;
+		if (data_len <= urb->transfer_buffer_length)
+			copy_len = data_len;
+		else
+			copy_len = urb->transfer_buffer_length;
+		if (copy_len)
 			memcpy(urb->transfer_buffer, data, copy_len);
-			urb->actual_length = copy_len;
-		}
+		urb->actual_length = copy_len;
 		oz_complete_urb(hcd, urb, 0, 0);
 	}
 }
@@ -1012,9 +961,6 @@ void oz_hcd_data_ind(void *hport, u8 endpoint, u8 *data, int data_len)
 			urb->actual_length = copy_len;
 			oz_complete_urb(port->ozhcd->hcd, urb, 0, 0);
 			return;
-		} else {
-			oz_trace("buffering frame as URB is not available\n");
-			oz_hcd_buffer_data(ep, data, data_len);
 		}
 		break;
 	case USB_ENDPOINT_XFER_ISOC:
@@ -1054,7 +1000,7 @@ int oz_hcd_heartbeat(void *hport)
 		ep = ep_from_link(e);
 		if (ep->credit < 0)
 			continue;
-		ep->credit += jiffies_to_msecs(now - ep->last_jiffies);
+		ep->credit += (now - ep->last_jiffies);
 		if (ep->credit > ep->credit_ceiling)
 			ep->credit = ep->credit_ceiling;
 		oz_event_log(OZ_EVT_EP_CREDIT, ep->ep_num, 0, 0, ep->credit);
@@ -1063,12 +1009,13 @@ int oz_hcd_heartbeat(void *hport)
 			urbl = list_first_entry(&ep->urb_list,
 				struct oz_urb_link, link);
 			urb = urbl->urb;
-			if ((ep->credit + 1) < urb->number_of_packets)
+			if (ep->credit < urb->number_of_packets)
 				break;
 			ep->credit -= urb->number_of_packets;
 			oz_event_log(OZ_EVT_EP_CREDIT, ep->ep_num, 0, 0,
 				ep->credit);
-			list_move_tail(&urbl->link, &xfr_list);
+			list_del(&urbl->link);
+			list_add_tail(&urbl->link, &xfr_list);
 		}
 	}
 	spin_unlock_bh(&ozhcd->hcd_lock);
@@ -1105,7 +1052,7 @@ int oz_hcd_heartbeat(void *hport)
 			}
 			continue;
 		}
-		ep->credit += jiffies_to_msecs(now - ep->last_jiffies);
+		ep->credit += (now - ep->last_jiffies);
 		oz_event_log(OZ_EVT_EP_CREDIT, ep->ep_num | USB_DIR_IN,
 			0, 0, ep->credit);
 		ep->last_jiffies = now;
@@ -1117,7 +1064,7 @@ int oz_hcd_heartbeat(void *hport)
 			int len = 0;
 			int copy_len;
 			int i;
-			if ((ep->credit + 1) < urb->number_of_packets)
+			if (ep->credit < urb->number_of_packets)
 				break;
 			if (ep->buffered_units < urb->number_of_packets)
 				break;
@@ -1149,7 +1096,8 @@ int oz_hcd_heartbeat(void *hport)
 			urb->error_count = 0;
 			urb->start_frame = ep->start_frame;
 			ep->start_frame += urb->number_of_packets;
-			list_move_tail(&urbl->link, &xfr_list);
+			list_del(&urbl->link);
+			list_add_tail(&urbl->link, &xfr_list);
 			ep->credit -= urb->number_of_packets;
 			oz_event_log(OZ_EVT_EP_CREDIT, ep->ep_num | USB_DIR_IN,
 				0, 0, ep->credit);
@@ -1181,7 +1129,8 @@ int oz_hcd_heartbeat(void *hport)
 				oz_trace("%ld: Request 0x%p timeout\n",
 						now, urbl->urb);
 				urbl->submit_jiffies = now;
-				list_move_tail(e, &xfr_list);
+				list_del(e);
+				list_add_tail(e, &xfr_list);
 			}
 		}
 		if (!list_empty(&ep->urb_list))
@@ -1218,16 +1167,10 @@ static int oz_build_endpoints_for_interface(struct usb_hcd *hcd,
 		int buffer_size = 0;
 
 		oz_trace("%d bEndpointAddress = %x\n", i, ep_addr);
-		if (ep_addr & USB_ENDPOINT_DIR_MASK) {
-			switch (hep->desc.bmAttributes &
-						USB_ENDPOINT_XFERTYPE_MASK) {
-			case USB_ENDPOINT_XFER_ISOC:
-				buffer_size = 24*1024;
-				break;
-			case USB_ENDPOINT_XFER_INT:
-				buffer_size = 128;
-				break;
-			}
+		if ((ep_addr & USB_ENDPOINT_DIR_MASK) &&
+			((hep->desc.bmAttributes & USB_ENDPOINT_XFERTYPE_MASK)
+			== USB_ENDPOINT_XFER_ISOC)) {
+			buffer_size = 24*1024;
 		}
 
 		ep = oz_ep_alloc(mem_flags, buffer_size);
@@ -1304,14 +1247,16 @@ static void oz_clean_endpoints_for_interface(struct usb_hcd *hcd,
 			port->out_ep[i] = 0;
 			/* Remove from isoc list if present.
 			 */
-			list_move_tail(e, &ep_list);
+			list_del(e);
+			list_add_tail(e, &ep_list);
 		}
 		/* Gather IN endpoints.
 		 */
 		if ((mask & (1<<(i+OZ_NB_ENDPOINTS))) && port->in_ep[i]) {
 			e = &port->in_ep[i]->link;
 			port->in_ep[i] = 0;
-			list_move_tail(e, &ep_list);
+			list_del(e);
+			list_add_tail(e, &ep_list);
 		}
 	}
 	spin_unlock_bh(&ozhcd->hcd_lock);
@@ -1513,7 +1458,6 @@ static void oz_process_ep0_urb(struct oz_hcd *ozhcd, struct urb *urb,
 		int data_len = 0;
 		if ((setup->bRequestType & USB_DIR_IN) == 0)
 			data_len = wlength;
-		urb->actual_length = data_len;
 		if (oz_usb_control_req(port->hpd, req_id, setup,
 				urb->transfer_buffer, data_len)) {
 			rc = -ENOMEM;

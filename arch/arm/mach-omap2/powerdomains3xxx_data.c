@@ -15,9 +15,11 @@
 #include <linux/init.h>
 #include <linux/bug.h>
 
-#include "soc.h"
+#include <plat/cpu.h>
+
 #include "powerdomain.h"
 #include "powerdomains2xxx_3xxx_data.h"
+
 #include "prcm-common.h"
 #include "prm2xxx_3xxx.h"
 #include "prm-regbits-34xx.h"

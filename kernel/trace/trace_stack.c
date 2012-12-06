@@ -111,8 +111,7 @@ static inline void check_stack(void)
 }
 
 static void
-stack_trace_call(unsigned long ip, unsigned long parent_ip,
-		 struct ftrace_ops *op, struct pt_regs *pt_regs)
+stack_trace_call(unsigned long ip, unsigned long parent_ip)
 {
 	int cpu;
 
@@ -137,7 +136,6 @@ stack_trace_call(unsigned long ip, unsigned long parent_ip,
 static struct ftrace_ops trace_ops __read_mostly =
 {
 	.func = stack_trace_call,
-	.flags = FTRACE_OPS_FL_RECURSION_SAFE,
 };
 
 static ssize_t

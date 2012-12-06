@@ -15,7 +15,7 @@
 
 #include <mach/vreg.h>
 
-#include <linux/platform_data/mmc-msm_sdcc.h>
+#include <mach/mmc.h>
 
 #include "devices.h"
 

@@ -25,12 +25,12 @@
 /*
  * Authors: Dave Airlie <airlied@redhat.com>
  */
-#include <drm/drmP.h>
+#include "drmP.h"
 #include "ast_drv.h"
 
 
-#include <drm/drm_fb_helper.h>
-#include <drm/drm_crtc_helper.h>
+#include "drm_fb_helper.h"
+#include "drm_crtc_helper.h"
 
 #include "ast_dram_tables.h"
 

@@ -219,13 +219,7 @@ static void iscsit_determine_counts_for_list(
 	int check_immediate = 0;
 	u32 burstlength = 0, offset = 0;
 	u32 unsolicited_data_length = 0;
-	u32 mdsl;
 	struct iscsi_conn *conn = cmd->conn;
-
-	if (cmd->se_cmd.data_direction == DMA_TO_DEVICE)
-		mdsl = cmd->conn->conn_ops->MaxXmitDataSegmentLength;
-	else
-		mdsl = cmd->conn->conn_ops->MaxRecvDataSegmentLength;
 
 	if ((bl->type == PDULIST_IMMEDIATE) ||
 	    (bl->type == PDULIST_IMMEDIATE_AND_UNSOLICITED))
@@ -249,13 +243,14 @@ static void iscsit_determine_counts_for_list(
 			continue;
 		}
 		if (unsolicited_data_length > 0) {
-			if ((offset + mdsl) >= cmd->se_cmd.data_length) {
+			if ((offset + conn->conn_ops->MaxRecvDataSegmentLength)
+					>= cmd->se_cmd.data_length) {
 				unsolicited_data_length -=
 					(cmd->se_cmd.data_length - offset);
 				offset += (cmd->se_cmd.data_length - offset);
 				continue;
 			}
-			if ((offset + mdsl)
+			if ((offset + conn->conn_ops->MaxRecvDataSegmentLength)
 					>= conn->sess->sess_ops->FirstBurstLength) {
 				unsolicited_data_length -=
 					(conn->sess->sess_ops->FirstBurstLength -
@@ -267,15 +262,17 @@ static void iscsit_determine_counts_for_list(
 				continue;
 			}
 
-			offset += mdsl;
-			unsolicited_data_length -= mdsl;
+			offset += conn->conn_ops->MaxRecvDataSegmentLength;
+			unsolicited_data_length -=
+				conn->conn_ops->MaxRecvDataSegmentLength;
 			continue;
 		}
-		if ((offset + mdsl) >= cmd->se_cmd.data_length) {
+		if ((offset + conn->conn_ops->MaxRecvDataSegmentLength) >=
+		     cmd->se_cmd.data_length) {
 			offset += (cmd->se_cmd.data_length - offset);
 			continue;
 		}
-		if ((burstlength + mdsl) >=
+		if ((burstlength + conn->conn_ops->MaxRecvDataSegmentLength) >=
 		     conn->sess->sess_ops->MaxBurstLength) {
 			offset += (conn->sess->sess_ops->MaxBurstLength -
 					burstlength);
@@ -284,8 +281,8 @@ static void iscsit_determine_counts_for_list(
 			continue;
 		}
 
-		burstlength += mdsl;
-		offset += mdsl;
+		burstlength += conn->conn_ops->MaxRecvDataSegmentLength;
+		offset += conn->conn_ops->MaxRecvDataSegmentLength;
 	}
 }
 
@@ -299,16 +296,11 @@ static int iscsit_do_build_pdu_and_seq_lists(
 	struct iscsi_build_list *bl)
 {
 	int check_immediate = 0, datapduinorder, datasequenceinorder;
-	u32 burstlength = 0, offset = 0, i = 0, mdsl;
+	u32 burstlength = 0, offset = 0, i = 0;
 	u32 pdu_count = 0, seq_no = 0, unsolicited_data_length = 0;
 	struct iscsi_conn *conn = cmd->conn;
 	struct iscsi_pdu *pdu = cmd->pdu_list;
 	struct iscsi_seq *seq = cmd->seq_list;
-
-	if (cmd->se_cmd.data_direction == DMA_TO_DEVICE)
-		mdsl = cmd->conn->conn_ops->MaxXmitDataSegmentLength;
-	else
-		mdsl = cmd->conn->conn_ops->MaxRecvDataSegmentLength;
 
 	datapduinorder = conn->sess->sess_ops->DataPDUInOrder;
 	datasequenceinorder = conn->sess->sess_ops->DataSequenceInOrder;
@@ -356,7 +348,9 @@ static int iscsit_do_build_pdu_and_seq_lists(
 			continue;
 		}
 		if (unsolicited_data_length > 0) {
-			if ((offset + mdsl) >= cmd->se_cmd.data_length) {
+			if ((offset +
+			     conn->conn_ops->MaxRecvDataSegmentLength) >=
+			     cmd->se_cmd.data_length) {
 				if (!datapduinorder) {
 					pdu[i].type = PDUTYPE_UNSOLICITED;
 					pdu[i].length =
@@ -373,7 +367,8 @@ static int iscsit_do_build_pdu_and_seq_lists(
 				offset += (cmd->se_cmd.data_length - offset);
 				continue;
 			}
-			if ((offset + mdsl) >=
+			if ((offset +
+			     conn->conn_ops->MaxRecvDataSegmentLength) >=
 					conn->sess->sess_ops->FirstBurstLength) {
 				if (!datapduinorder) {
 					pdu[i].type = PDUTYPE_UNSOLICITED;
@@ -401,14 +396,17 @@ static int iscsit_do_build_pdu_and_seq_lists(
 
 			if (!datapduinorder) {
 				pdu[i].type = PDUTYPE_UNSOLICITED;
-				pdu[i++].length = mdsl;
+				pdu[i++].length =
+				     conn->conn_ops->MaxRecvDataSegmentLength;
 			}
-			burstlength += mdsl;
-			offset += mdsl;
-			unsolicited_data_length -= mdsl;
+			burstlength += conn->conn_ops->MaxRecvDataSegmentLength;
+			offset += conn->conn_ops->MaxRecvDataSegmentLength;
+			unsolicited_data_length -=
+				conn->conn_ops->MaxRecvDataSegmentLength;
 			continue;
 		}
-		if ((offset + mdsl) >= cmd->se_cmd.data_length) {
+		if ((offset + conn->conn_ops->MaxRecvDataSegmentLength) >=
+		     cmd->se_cmd.data_length) {
 			if (!datapduinorder) {
 				pdu[i].type = PDUTYPE_NORMAL;
 				pdu[i].length = (cmd->se_cmd.data_length - offset);
@@ -422,7 +420,7 @@ static int iscsit_do_build_pdu_and_seq_lists(
 			offset += (cmd->se_cmd.data_length - offset);
 			continue;
 		}
-		if ((burstlength + mdsl) >=
+		if ((burstlength + conn->conn_ops->MaxRecvDataSegmentLength) >=
 		     conn->sess->sess_ops->MaxBurstLength) {
 			if (!datapduinorder) {
 				pdu[i].type = PDUTYPE_NORMAL;
@@ -447,10 +445,11 @@ static int iscsit_do_build_pdu_and_seq_lists(
 
 		if (!datapduinorder) {
 			pdu[i].type = PDUTYPE_NORMAL;
-			pdu[i++].length = mdsl;
+			pdu[i++].length =
+				conn->conn_ops->MaxRecvDataSegmentLength;
 		}
-		burstlength += mdsl;
-		offset += mdsl;
+		burstlength += conn->conn_ops->MaxRecvDataSegmentLength;
+		offset += conn->conn_ops->MaxRecvDataSegmentLength;
 	}
 
 	if (!datasequenceinorder) {

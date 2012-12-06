@@ -23,7 +23,6 @@
 #include <linux/phy.h>
 #include <linux/clk.h>
 #include <linux/videodev2.h>
-#include <linux/v4l2-dv-timings.h>
 #include <linux/export.h>
 
 #include <media/tvp514x.h>
@@ -32,13 +31,13 @@
 #include <asm/mach/arch.h>
 
 #include <mach/common.h>
-#include <linux/platform_data/i2c-davinci.h>
+#include <mach/i2c.h>
 #include <mach/serial.h>
 #include <mach/mux.h>
-#include <linux/platform_data/mtd-davinci.h>
-#include <linux/platform_data/mmc-davinci.h>
-#include <linux/platform_data/usb-davinci.h>
-#include <linux/platform_data/mtd-davinci-aemif.h>
+#include <mach/nand.h>
+#include <mach/mmc.h>
+#include <mach/usb.h>
+#include <mach/aemif.h>
 
 #include "davinci.h"
 
@@ -621,7 +620,7 @@ static struct vpbe_enc_mode_info dm644xevm_enc_std_timing[] = {
 	{
 		.name		= "ntsc",
 		.timings_type	= VPBE_ENC_STD,
-		.std_id		= V4L2_STD_525_60,
+		.timings	= {V4L2_STD_525_60},
 		.interlaced	= 1,
 		.xres		= 720,
 		.yres		= 480,
@@ -633,7 +632,7 @@ static struct vpbe_enc_mode_info dm644xevm_enc_std_timing[] = {
 	{
 		.name		= "pal",
 		.timings_type	= VPBE_ENC_STD,
-		.std_id		= V4L2_STD_625_50,
+		.timings	= {V4L2_STD_625_50},
 		.interlaced	= 1,
 		.xres		= 720,
 		.yres		= 576,
@@ -648,8 +647,8 @@ static struct vpbe_enc_mode_info dm644xevm_enc_std_timing[] = {
 static struct vpbe_enc_mode_info dm644xevm_enc_preset_timing[] = {
 	{
 		.name		= "480p59_94",
-		.timings_type	= VPBE_ENC_CUSTOM_TIMINGS,
-		.dv_timings	= V4L2_DV_BT_CEA_720X480P59_94,
+		.timings_type	= VPBE_ENC_DV_PRESET,
+		.timings	= {V4L2_DV_480P59_94},
 		.interlaced	= 0,
 		.xres		= 720,
 		.yres		= 480,
@@ -660,8 +659,8 @@ static struct vpbe_enc_mode_info dm644xevm_enc_preset_timing[] = {
 	},
 	{
 		.name		= "576p50",
-		.timings_type	= VPBE_ENC_CUSTOM_TIMINGS,
-		.dv_timings	= V4L2_DV_BT_CEA_720X576P50,
+		.timings_type	= VPBE_ENC_DV_PRESET,
+		.timings	= {V4L2_DV_576P50},
 		.interlaced	= 0,
 		.xres		= 720,
 		.yres		= 576,
@@ -699,7 +698,7 @@ static struct vpbe_output dm644xevm_vpbe_outputs[] = {
 			.index		= 1,
 			.name		= "Component",
 			.type		= V4L2_OUTPUT_TYPE_ANALOG,
-			.capabilities	= V4L2_OUT_CAP_DV_TIMINGS,
+			.capabilities	= V4L2_OUT_CAP_PRESETS,
 		},
 		.subdev_name	= VPBE_VENC_SUBDEV_NAME,
 		.default_mode	= "480p59_94",

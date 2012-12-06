@@ -31,8 +31,9 @@
  */
 #include <linux/compat.h>
 
-#include <drm/drmP.h>
-#include <drm/i915_drm.h>
+#include "drmP.h"
+#include "drm.h"
+#include "i915_drm.h"
 #include "i915_drv.h"
 
 typedef struct _drm_i915_batchbuffer32 {

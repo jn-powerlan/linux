@@ -25,10 +25,11 @@
  *
  */
 
-#include <linux/string.h>
-#include <linux/bitops.h>
-#include <drm/drmP.h>
-#include <drm/i915_drm.h>
+#include "linux/string.h"
+#include "linux/bitops.h"
+#include "drmP.h"
+#include "drm.h"
+#include "i915_drm.h"
 #include "i915_drv.h"
 
 /** @file i915_gem_tiling.c
@@ -91,10 +92,7 @@ i915_gem_detect_bit_6_swizzle(struct drm_device *dev)
 	uint32_t swizzle_x = I915_BIT_6_SWIZZLE_UNKNOWN;
 	uint32_t swizzle_y = I915_BIT_6_SWIZZLE_UNKNOWN;
 
-	if (IS_VALLEYVIEW(dev)) {
-		swizzle_x = I915_BIT_6_SWIZZLE_NONE;
-		swizzle_y = I915_BIT_6_SWIZZLE_NONE;
-	} else if (INTEL_INFO(dev)->gen >= 6) {
+	if (INTEL_INFO(dev)->gen >= 6) {
 		uint32_t dimm_c0, dimm_c1;
 		dimm_c0 = I915_READ(MAD_DIMM_C0);
 		dimm_c1 = I915_READ(MAD_DIMM_C1);
@@ -472,20 +470,18 @@ i915_gem_swizzle_page(struct page *page)
 void
 i915_gem_object_do_bit_17_swizzle(struct drm_i915_gem_object *obj)
 {
-	struct scatterlist *sg;
 	int page_count = obj->base.size >> PAGE_SHIFT;
 	int i;
 
 	if (obj->bit_17 == NULL)
 		return;
 
-	for_each_sg(obj->pages->sgl, sg, page_count, i) {
-		struct page *page = sg_page(sg);
-		char new_bit_17 = page_to_phys(page) >> 17;
+	for (i = 0; i < page_count; i++) {
+		char new_bit_17 = page_to_phys(obj->pages[i]) >> 17;
 		if ((new_bit_17 & 0x1) !=
 		    (test_bit(i, obj->bit_17) != 0)) {
-			i915_gem_swizzle_page(page);
-			set_page_dirty(page);
+			i915_gem_swizzle_page(obj->pages[i]);
+			set_page_dirty(obj->pages[i]);
 		}
 	}
 }
@@ -493,7 +489,6 @@ i915_gem_object_do_bit_17_swizzle(struct drm_i915_gem_object *obj)
 void
 i915_gem_object_save_bit_17_swizzle(struct drm_i915_gem_object *obj)
 {
-	struct scatterlist *sg;
 	int page_count = obj->base.size >> PAGE_SHIFT;
 	int i;
 
@@ -507,9 +502,8 @@ i915_gem_object_save_bit_17_swizzle(struct drm_i915_gem_object *obj)
 		}
 	}
 
-	for_each_sg(obj->pages->sgl, sg, page_count, i) {
-		struct page *page = sg_page(sg);
-		if (page_to_phys(page) & (1 << 17))
+	for (i = 0; i < page_count; i++) {
+		if (page_to_phys(obj->pages[i]) & (1 << 17))
 			__set_bit(i, obj->bit_17);
 		else
 			__clear_bit(i, obj->bit_17);

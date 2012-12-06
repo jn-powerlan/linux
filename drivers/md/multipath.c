@@ -335,9 +335,8 @@ abort:
  *	3.	Performs writes following reads for array syncronising.
  */
 
-static void multipathd(struct md_thread *thread)
+static void multipathd (struct mddev *mddev)
 {
-	struct mddev *mddev = thread->mddev;
 	struct multipath_bh *mp_bh;
 	struct bio *bio;
 	unsigned long flags;

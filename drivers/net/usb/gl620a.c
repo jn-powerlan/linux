@@ -91,9 +91,7 @@ static int genelink_rx_fixup(struct usbnet *dev, struct sk_buff *skb)
 	// get the packet count of the received skb
 	count = le32_to_cpu(header->packet_count);
 	if (count > GL_MAX_TRANSMIT_PACKETS) {
-		netdev_dbg(dev->net,
-			   "genelink: invalid received packet count %u\n",
-			   count);
+		dbg("genelink: invalid received packet count %u", count);
 		return 0;
 	}
 
@@ -109,8 +107,7 @@ static int genelink_rx_fixup(struct usbnet *dev, struct sk_buff *skb)
 
 		// this may be a broken packet
 		if (size > GL_MAX_PACKET_LEN) {
-			netdev_dbg(dev->net, "genelink: invalid rx length %d\n",
-				   size);
+			dbg("genelink: invalid rx length %d", size);
 			return 0;
 		}
 
@@ -136,8 +133,7 @@ static int genelink_rx_fixup(struct usbnet *dev, struct sk_buff *skb)
 	skb_pull(skb, 4);
 
 	if (skb->len > GL_MAX_PACKET_LEN) {
-		netdev_dbg(dev->net, "genelink: invalid rx length %d\n",
-			   skb->len);
+		dbg("genelink: invalid rx length %d", skb->len);
 		return 0;
 	}
 	return 1;

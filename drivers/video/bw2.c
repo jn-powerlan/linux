@@ -319,10 +319,8 @@ static int __devinit bw2_probe(struct platform_device *op)
 
 	info->screen_base = of_ioremap(&op->resource[0], 0,
 				       info->fix.smem_len, "bw2 ram");
-	if (!info->screen_base) {
-		err = -ENOMEM;
+	if (!info->screen_base)
 		goto out_unmap_regs;
-	}
 
 	bw2_blank(FB_BLANK_UNBLANK, info);
 

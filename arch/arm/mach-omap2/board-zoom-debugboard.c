@@ -18,12 +18,9 @@
 #include <linux/regulator/machine.h>
 
 #include <plat/gpmc.h>
-#include "gpmc-smsc911x.h"
+#include <plat/gpmc-smsc911x.h>
 
 #include <mach/board-zoom.h>
-
-#include "soc.h"
-#include "common.h"
 
 #define ZOOM_SMSC911X_CS	7
 #define ZOOM_SMSC911X_GPIO	158
@@ -84,7 +81,8 @@ static inline void __init zoom_init_quaduart(void)
 	quart_cs = ZOOM_QUADUART_CS;
 
 	if (gpmc_cs_request(quart_cs, SZ_1M, &cs_mem_base) < 0) {
-		pr_err("Failed to request GPMC mem for Quad UART(TL16CP754C)\n");
+		printk(KERN_ERR "Failed to request GPMC mem"
+				"for Quad UART(TL16CP754C)\n");
 		return;
 	}
 
@@ -106,8 +104,8 @@ static inline int omap_zoom_debugboard_detect(void)
 
 	if (gpio_request_one(debug_board_detect, GPIOF_IN,
 			     "Zoom debug board detect") < 0) {
-		pr_err("Failed to request GPIO%d for Zoom debug board detect\n",
-		       debug_board_detect);
+		printk(KERN_ERR "Failed to request GPIO%d for Zoom debug"
+		"board detect\n", debug_board_detect);
 		return 0;
 	}
 

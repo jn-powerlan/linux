@@ -489,7 +489,7 @@ static int ni_atmio_attach(struct comedi_device *dev,
 
 	/* generic E series stuff in ni_mio_common.c */
 
-	ret = ni_E_init(dev);
+	ret = ni_E_init(dev, it);
 	if (ret < 0)
 		return ret;
 

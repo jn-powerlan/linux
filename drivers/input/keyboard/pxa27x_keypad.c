@@ -32,7 +32,7 @@
 #include <asm/mach/map.h>
 
 #include <mach/hardware.h>
-#include <linux/platform_data/keypad-pxa27x.h>
+#include <plat/pxa27x_keypad.h>
 /*
  * Keypad Controller registers
  */
@@ -367,9 +367,6 @@ static void pxa27x_keypad_config(struct pxa27x_keypad *keypad)
 	struct pxa27x_keypad_platform_data *pdata = keypad->pdata;
 	unsigned int mask = 0, direct_key_num = 0;
 	unsigned long kpc = 0;
-
-	/* clear pending interrupt bit */
-	keypad_readl(KPC);
 
 	/* enable matrix keys with automatic scan */
 	if (pdata->matrix_key_rows && pdata->matrix_key_cols) {

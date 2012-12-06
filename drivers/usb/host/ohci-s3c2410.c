@@ -21,7 +21,7 @@
 
 #include <linux/platform_device.h>
 #include <linux/clk.h>
-#include <linux/platform_data/usb-ohci-s3c2410.h>
+#include <plat/usb-control.h>
 
 #define valid_port(idx) ((idx) == 1 || (idx) == 2)
 

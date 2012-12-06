@@ -9,7 +9,6 @@
 #include <linux/string.h>
 #include <asm/asm.h>
 #include <asm/page.h>
-#include <asm/smap.h>
 
 #define VERIFY_READ 0
 #define VERIFY_WRITE 1
@@ -193,10 +192,9 @@ extern int __get_user_bad(void);
 
 #ifdef CONFIG_X86_32
 #define __put_user_asm_u64(x, addr, err, errret)			\
-	asm volatile(ASM_STAC "\n"					\
-		     "1:	movl %%eax,0(%2)\n"			\
+	asm volatile("1:	movl %%eax,0(%2)\n"			\
 		     "2:	movl %%edx,4(%2)\n"			\
-		     "3: " ASM_CLAC "\n"				\
+		     "3:\n"						\
 		     ".section .fixup,\"ax\"\n"				\
 		     "4:	movl %3,%0\n"				\
 		     "	jmp 3b\n"					\
@@ -207,10 +205,9 @@ extern int __get_user_bad(void);
 		     : "A" (x), "r" (addr), "i" (errret), "0" (err))
 
 #define __put_user_asm_ex_u64(x, addr)					\
-	asm volatile(ASM_STAC "\n"					\
-		     "1:	movl %%eax,0(%1)\n"			\
+	asm volatile("1:	movl %%eax,0(%1)\n"			\
 		     "2:	movl %%edx,4(%1)\n"			\
-		     "3: " ASM_CLAC "\n"				\
+		     "3:\n"						\
 		     _ASM_EXTABLE_EX(1b, 2b)				\
 		     _ASM_EXTABLE_EX(2b, 3b)				\
 		     : : "A" (x), "r" (addr))
@@ -382,9 +379,8 @@ do {									\
 } while (0)
 
 #define __get_user_asm(x, addr, err, itype, rtype, ltype, errret)	\
-	asm volatile(ASM_STAC "\n"					\
-		     "1:	mov"itype" %2,%"rtype"1\n"		\
-		     "2: " ASM_CLAC "\n"				\
+	asm volatile("1:	mov"itype" %2,%"rtype"1\n"		\
+		     "2:\n"						\
 		     ".section .fixup,\"ax\"\n"				\
 		     "3:	mov %3,%0\n"				\
 		     "	xor"itype" %"rtype"1,%"rtype"1\n"		\
@@ -447,9 +443,8 @@ struct __large_struct { unsigned long buf[100]; };
  * aliasing issues.
  */
 #define __put_user_asm(x, addr, err, itype, rtype, ltype, errret)	\
-	asm volatile(ASM_STAC "\n"					\
-		     "1:	mov"itype" %"rtype"1,%2\n"		\
-		     "2: " ASM_CLAC "\n"				\
+	asm volatile("1:	mov"itype" %"rtype"1,%2\n"		\
+		     "2:\n"						\
 		     ".section .fixup,\"ax\"\n"				\
 		     "3:	mov %3,%0\n"				\
 		     "	jmp 2b\n"					\
@@ -468,13 +463,13 @@ struct __large_struct { unsigned long buf[100]; };
  * uaccess_try and catch
  */
 #define uaccess_try	do {						\
+	int prev_err = current_thread_info()->uaccess_err;		\
 	current_thread_info()->uaccess_err = 0;				\
-	stac();								\
 	barrier();
 
 #define uaccess_catch(err)						\
-	clac();								\
 	(err) |= (current_thread_info()->uaccess_err ? -EFAULT : 0);	\
+	current_thread_info()->uaccess_err = prev_err;			\
 } while (0)
 
 /**
@@ -574,9 +569,6 @@ strncpy_from_user(char *dst, const char __user *src, long count);
 extern __must_check long strlen_user(const char __user *str);
 extern __must_check long strnlen_user(const char __user *str, long n);
 
-unsigned long __must_check clear_user(void __user *mem, unsigned long len);
-unsigned long __must_check __clear_user(void __user *mem, unsigned long len);
-
 /*
  * movsl can be slow when source and dest are not both 8-byte aligned
  */
@@ -589,9 +581,9 @@ extern struct movsl_mask {
 #define ARCH_HAS_NOCACHE_UACCESS 1
 
 #ifdef CONFIG_X86_32
-# include <asm/uaccess_32.h>
+# include "uaccess_32.h"
 #else
-# include <asm/uaccess_64.h>
+# include "uaccess_64.h"
 #endif
 
 #endif /* _ASM_X86_UACCESS_H */

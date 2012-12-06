@@ -286,7 +286,7 @@ uf_run_unifihelper(unifi_priv_t *priv)
 
     unifi_trace(priv, UDBG2, "running %s %s %s\n", argv[0], argv[1], argv[2]);
 
-    r = call_usermodehelper(argv[0], argv, envp, UMH_WAIT_EXEC);
+    r = call_usermodehelper(argv[0], argv, envp, 0);
 
     return r;
 #else
@@ -402,7 +402,9 @@ int uf_release_firmware_files(unifi_priv_t *priv)
 int uf_release_firmware(unifi_priv_t *priv, struct dlpriv *to_free)
 {
     if (to_free != NULL) {
-        release_firmware((const struct firmware *)to_free->fw_desc);
+        if (to_free->fw_desc != NULL) {
+            release_firmware((const struct firmware *)to_free->fw_desc);
+        }
         to_free->fw_desc = NULL;
         to_free->dl_data = NULL;
         to_free->dl_len = 0;

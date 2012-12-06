@@ -45,6 +45,7 @@ struct kmem_cache {
 	unsigned int colour_off;	/* colour offset */
 	struct kmem_cache *slabp_cache;
 	unsigned int slab_size;
+	unsigned int dflags;		/* dynamic flags */
 
 	/* constructor func */
 	void (*ctor)(void *obj);
@@ -111,12 +112,18 @@ void *kmem_cache_alloc(struct kmem_cache *, gfp_t);
 void *__kmalloc(size_t size, gfp_t flags);
 
 #ifdef CONFIG_TRACING
-extern void *kmem_cache_alloc_trace(struct kmem_cache *, gfp_t, size_t);
+extern void *kmem_cache_alloc_trace(size_t size,
+				    struct kmem_cache *cachep, gfp_t flags);
+extern size_t slab_buffer_size(struct kmem_cache *cachep);
 #else
 static __always_inline void *
-kmem_cache_alloc_trace(struct kmem_cache *cachep, gfp_t flags, size_t size)
+kmem_cache_alloc_trace(size_t size, struct kmem_cache *cachep, gfp_t flags)
 {
 	return kmem_cache_alloc(cachep, flags);
+}
+static inline size_t slab_buffer_size(struct kmem_cache *cachep)
+{
+	return 0;
 }
 #endif
 
@@ -147,7 +154,7 @@ found:
 #endif
 			cachep = malloc_sizes[i].cs_cachep;
 
-		ret = kmem_cache_alloc_trace(cachep, flags, size);
+		ret = kmem_cache_alloc_trace(size, cachep, flags);
 
 		return ret;
 	}
@@ -159,16 +166,16 @@ extern void *__kmalloc_node(size_t size, gfp_t flags, int node);
 extern void *kmem_cache_alloc_node(struct kmem_cache *, gfp_t flags, int node);
 
 #ifdef CONFIG_TRACING
-extern void *kmem_cache_alloc_node_trace(struct kmem_cache *cachep,
+extern void *kmem_cache_alloc_node_trace(size_t size,
+					 struct kmem_cache *cachep,
 					 gfp_t flags,
-					 int nodeid,
-					 size_t size);
+					 int nodeid);
 #else
 static __always_inline void *
-kmem_cache_alloc_node_trace(struct kmem_cache *cachep,
+kmem_cache_alloc_node_trace(size_t size,
+			    struct kmem_cache *cachep,
 			    gfp_t flags,
-			    int nodeid,
-			    size_t size)
+			    int nodeid)
 {
 	return kmem_cache_alloc_node(cachep, flags, nodeid);
 }
@@ -200,7 +207,7 @@ found:
 #endif
 			cachep = malloc_sizes[i].cs_cachep;
 
-		return kmem_cache_alloc_node_trace(cachep, flags, node, size);
+		return kmem_cache_alloc_node_trace(size, cachep, flags, node);
 	}
 	return __kmalloc_node(size, flags, node);
 }

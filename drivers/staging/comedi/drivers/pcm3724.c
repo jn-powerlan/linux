@@ -119,8 +119,6 @@ static int compute_buffer(int config, int devno, struct comedi_subdevice *s)
 static void do_3724_config(struct comedi_device *dev,
 			   struct comedi_subdevice *s, int chanspec)
 {
-	struct comedi_subdevice *s_dio1 = &dev->subdevices[0];
-	struct comedi_subdevice *s_dio2 = &dev->subdevices[1];
 	int config;
 	int buffer_config;
 	unsigned long port_8255_cfg;
@@ -138,10 +136,10 @@ static void do_3724_config(struct comedi_device *dev,
 	if (!(s->io_bits & 0xff0000))
 		config |= CR_C_IO;
 
-	buffer_config = compute_buffer(0, 0, s_dio1);
-	buffer_config = compute_buffer(buffer_config, 1, s_dio2);
+	buffer_config = compute_buffer(0, 0, dev->subdevices);
+	buffer_config = compute_buffer(buffer_config, 1, (dev->subdevices) + 1);
 
-	if (s == s_dio1)
+	if (s == dev->subdevices)
 		port_8255_cfg = dev->iobase + _8255_CR;
 	else
 		port_8255_cfg = dev->iobase + SIZE_8255 + _8255_CR;
@@ -156,7 +154,6 @@ static void do_3724_config(struct comedi_device *dev,
 static void enable_chan(struct comedi_device *dev, struct comedi_subdevice *s,
 			int chanspec)
 {
-	struct comedi_subdevice *s_dio1 = &dev->subdevices[0];
 	unsigned int mask;
 	int gatecfg;
 	struct priv_pcm3724 *priv;
@@ -165,9 +162,9 @@ static void enable_chan(struct comedi_device *dev, struct comedi_subdevice *s,
 	priv = dev->private;
 
 	mask = 1 << CR_CHAN(chanspec);
-	if (s == s_dio1)
+	if (s == dev->subdevices)	/*  subdev 0 */
 		priv->dio_1 |= mask;
-	else
+	else		/* subdev 1 */
 		priv->dio_2 |= mask;
 
 	if (priv->dio_1 & 0xff0000)
@@ -234,7 +231,6 @@ static int pcm3724_attach(struct comedi_device *dev,
 			  struct comedi_devconfig *it)
 {
 	const struct pcm3724_board *board = comedi_board(dev);
-	struct comedi_subdevice *s;
 	unsigned long iobase;
 	unsigned int iorange;
 	int ret, i, n_subdevices;
@@ -267,10 +263,9 @@ static int pcm3724_attach(struct comedi_device *dev,
 		return ret;
 
 	for (i = 0; i < dev->n_subdevices; i++) {
-		s = &dev->subdevices[i];
-		subdev_8255_init(dev, s, subdev_8255_cb,
+		subdev_8255_init(dev, dev->subdevices + i, subdev_8255_cb,
 				 (unsigned long)(dev->iobase + SIZE_8255 * i));
-		s->insn_config = subdev_3724_insn_config;
+		((dev->subdevices) + i)->insn_config = subdev_3724_insn_config;
 	}
 	return 0;
 }
@@ -278,14 +273,11 @@ static int pcm3724_attach(struct comedi_device *dev,
 static void pcm3724_detach(struct comedi_device *dev)
 {
 	const struct pcm3724_board *board = comedi_board(dev);
-	struct comedi_subdevice *s;
 	int i;
 
 	if (dev->subdevices) {
-		for (i = 0; i < dev->n_subdevices; i++) {
-			s = &dev->subdevices[i];
-			subdev_8255_cleanup(dev, s);
-		}
+		for (i = 0; i < dev->n_subdevices; i++)
+			subdev_8255_cleanup(dev, dev->subdevices + i);
 	}
 	if (dev->iobase)
 		release_region(dev->iobase, board->io_range);

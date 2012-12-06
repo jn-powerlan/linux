@@ -28,7 +28,8 @@
 #include <linux/linkage.h>
 #include <asm/assembler.h>
 
-#include "omap24xx.h"
+#include <plat/omap24xx.h>
+
 #include "sdrc.h"
 
 /* First address of reserved address space?  apparently valid for OMAP2 & 3 */

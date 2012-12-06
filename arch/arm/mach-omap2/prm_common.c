@@ -26,6 +26,7 @@
 
 #include <plat/common.h>
 #include <plat/prcm.h>
+#include <plat/irqs.h>
 
 #include "prm2xxx_3xxx.h"
 #include "prm44xx.h"

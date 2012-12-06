@@ -1601,8 +1601,7 @@ qlcnic_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	adapter->netdev  = netdev;
 	adapter->pdev    = pdev;
 
-	err = qlcnic_alloc_adapter_resources(adapter);
-	if (err)
+	if (qlcnic_alloc_adapter_resources(adapter))
 		goto err_out_free_netdev;
 
 	adapter->dev_rst_time = jiffies;
@@ -4523,7 +4522,7 @@ static void
 qlcnic_restore_indev_addr(struct net_device *dev, unsigned long event)
 { }
 #endif
-static const struct pci_error_handlers qlcnic_err_handler = {
+static struct pci_error_handlers qlcnic_err_handler = {
 	.error_detected = qlcnic_io_error_detected,
 	.slot_reset = qlcnic_io_slot_reset,
 	.resume = qlcnic_io_resume,

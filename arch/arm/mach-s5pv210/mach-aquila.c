@@ -28,7 +28,6 @@
 #include <asm/setup.h>
 #include <asm/mach-types.h>
 
-#include <video/samsung_fimd.h>
 #include <mach/map.h>
 #include <mach/regs-clock.h>
 
@@ -40,6 +39,7 @@
 #include <plat/fimc-core.h>
 #include <plat/sdhci.h>
 #include <plat/s5p-time.h>
+#include <plat/regs-fb-v4.h>
 
 #include "common.h"
 

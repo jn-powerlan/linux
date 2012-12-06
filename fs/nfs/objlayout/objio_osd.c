@@ -41,7 +41,6 @@
 #include <scsi/osd_ore.h>
 
 #include "objlayout.h"
-#include "../internal.h"
 
 #define NFSDBG_FACILITY         NFSDBG_PNFS_LD
 
@@ -369,7 +368,7 @@ void objio_free_result(struct objlayout_io_res *oir)
 	kfree(objios);
 }
 
-static enum pnfs_osd_errno osd_pri_2_pnfs_err(enum osd_err_priority oep)
+enum pnfs_osd_errno osd_pri_2_pnfs_err(enum osd_err_priority oep)
 {
 	switch (oep) {
 	case OSD_ERR_PRI_NO_ERROR:
@@ -574,7 +573,7 @@ static bool objio_pg_test(struct nfs_pageio_descriptor *pgio,
 			(unsigned long)pgio->pg_layout_private;
 }
 
-static void objio_init_read(struct nfs_pageio_descriptor *pgio, struct nfs_page *req)
+void objio_init_read(struct nfs_pageio_descriptor *pgio, struct nfs_page *req)
 {
 	pnfs_generic_pg_init_read(pgio, req);
 	if (unlikely(pgio->pg_lseg == NULL))
@@ -604,17 +603,11 @@ static bool aligned_on_raid_stripe(u64 offset, struct ore_layout *layout,
 	return false;
 }
 
-static void objio_init_write(struct nfs_pageio_descriptor *pgio, struct nfs_page *req)
+void objio_init_write(struct nfs_pageio_descriptor *pgio, struct nfs_page *req)
 {
 	unsigned long stripe_end = 0;
-	u64 wb_size;
 
-	if (pgio->pg_dreq == NULL)
-		wb_size = i_size_read(pgio->pg_inode) - req_offset(req);
-	else
-		wb_size = nfs_dreq_bytes_left(pgio->pg_dreq);
-
-	pnfs_generic_pg_init_write(pgio, req, wb_size);
+	pnfs_generic_pg_init_write(pgio, req);
 	if (unlikely(pgio->pg_lseg == NULL))
 		return; /* Not pNFS */
 

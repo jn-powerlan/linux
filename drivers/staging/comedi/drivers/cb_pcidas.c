@@ -45,7 +45,11 @@ Status:
   The boards may be autocalibrated using the comedi_calibrate
   utility.
 
-Configuration options: not applicable, uses PCI auto config
+Configuration options:
+  [0] - PCI bus of device (optional)
+  [1] - PCI slot of device (optional)
+  If bus/slot is not specified, the first supported
+  PCI device found will be used.
 
 For commands, the scanned channels must be consecutive
 (i.e. 4-5-6-7, 2-3-4,...), and must all have the same
@@ -803,35 +807,58 @@ static int cb_pcidas_ai_cmdtest(struct comedi_device *dev,
 	int tmp;
 	int i, gain, start_chan;
 
-	/* Step 1 : check if triggers are trivially valid */
+	/* step 1: trigger sources are trivially valid */
 
-	err |= cfc_check_trigger_src(&cmd->start_src, TRIG_NOW | TRIG_EXT);
-	err |= cfc_check_trigger_src(&cmd->scan_begin_src,
-					TRIG_FOLLOW | TRIG_TIMER | TRIG_EXT);
-	err |= cfc_check_trigger_src(&cmd->convert_src,
-					TRIG_TIMER | TRIG_NOW | TRIG_EXT);
-	err |= cfc_check_trigger_src(&cmd->scan_end_src, TRIG_COUNT);
-	err |= cfc_check_trigger_src(&cmd->stop_src, TRIG_COUNT | TRIG_NONE);
+	tmp = cmd->start_src;
+	cmd->start_src &= TRIG_NOW | TRIG_EXT;
+	if (!cmd->start_src || tmp != cmd->start_src)
+		err++;
+
+	tmp = cmd->scan_begin_src;
+	cmd->scan_begin_src &= TRIG_FOLLOW | TRIG_TIMER | TRIG_EXT;
+	if (!cmd->scan_begin_src || tmp != cmd->scan_begin_src)
+		err++;
+
+	tmp = cmd->convert_src;
+	cmd->convert_src &= TRIG_TIMER | TRIG_NOW | TRIG_EXT;
+	if (!cmd->convert_src || tmp != cmd->convert_src)
+		err++;
+
+	tmp = cmd->scan_end_src;
+	cmd->scan_end_src &= TRIG_COUNT;
+	if (!cmd->scan_end_src || tmp != cmd->scan_end_src)
+		err++;
+
+	tmp = cmd->stop_src;
+	cmd->stop_src &= TRIG_COUNT | TRIG_NONE;
+	if (!cmd->stop_src || tmp != cmd->stop_src)
+		err++;
 
 	if (err)
 		return 1;
 
-	/* Step 2a : make sure trigger sources are unique */
+	/* step 2: trigger sources are unique and mutually compatible */
 
-	err |= cfc_check_trigger_is_unique(cmd->start_src);
-	err |= cfc_check_trigger_is_unique(cmd->scan_begin_src);
-	err |= cfc_check_trigger_is_unique(cmd->convert_src);
-	err |= cfc_check_trigger_is_unique(cmd->stop_src);
+	if (cmd->start_src != TRIG_NOW && cmd->start_src != TRIG_EXT)
+		err++;
+	if (cmd->scan_begin_src != TRIG_FOLLOW &&
+	    cmd->scan_begin_src != TRIG_TIMER &&
+	    cmd->scan_begin_src != TRIG_EXT)
+		err++;
+	if (cmd->convert_src != TRIG_TIMER &&
+	    cmd->convert_src != TRIG_EXT && cmd->convert_src != TRIG_NOW)
+		err++;
+	if (cmd->stop_src != TRIG_COUNT && cmd->stop_src != TRIG_NONE)
+		err++;
 
-	/* Step 2b : and mutually compatible */
-
+	/*  make sure trigger sources are compatible with each other */
 	if (cmd->scan_begin_src == TRIG_FOLLOW && cmd->convert_src == TRIG_NOW)
-		err |= -EINVAL;
+		err++;
 	if (cmd->scan_begin_src != TRIG_FOLLOW && cmd->convert_src != TRIG_NOW)
-		err |= -EINVAL;
+		err++;
 	if (cmd->start_src == TRIG_EXT &&
 	    (cmd->convert_src == TRIG_EXT || cmd->scan_begin_src == TRIG_EXT))
-		err |= -EINVAL;
+		err++;
 
 	if (err)
 		return 2;
@@ -1056,24 +1083,43 @@ static int cb_pcidas_ao_cmdtest(struct comedi_device *dev,
 	int err = 0;
 	int tmp;
 
-	/* Step 1 : check if triggers are trivially valid */
+	/* step 1: trigger sources are trivially valid */
 
-	err |= cfc_check_trigger_src(&cmd->start_src, TRIG_INT);
-	err |= cfc_check_trigger_src(&cmd->scan_begin_src,
-					TRIG_TIMER | TRIG_EXT);
-	err |= cfc_check_trigger_src(&cmd->convert_src, TRIG_NOW);
-	err |= cfc_check_trigger_src(&cmd->scan_end_src, TRIG_COUNT);
-	err |= cfc_check_trigger_src(&cmd->stop_src, TRIG_COUNT | TRIG_NONE);
+	tmp = cmd->start_src;
+	cmd->start_src &= TRIG_INT;
+	if (!cmd->start_src || tmp != cmd->start_src)
+		err++;
+
+	tmp = cmd->scan_begin_src;
+	cmd->scan_begin_src &= TRIG_TIMER | TRIG_EXT;
+	if (!cmd->scan_begin_src || tmp != cmd->scan_begin_src)
+		err++;
+
+	tmp = cmd->convert_src;
+	cmd->convert_src &= TRIG_NOW;
+	if (!cmd->convert_src || tmp != cmd->convert_src)
+		err++;
+
+	tmp = cmd->scan_end_src;
+	cmd->scan_end_src &= TRIG_COUNT;
+	if (!cmd->scan_end_src || tmp != cmd->scan_end_src)
+		err++;
+
+	tmp = cmd->stop_src;
+	cmd->stop_src &= TRIG_COUNT | TRIG_NONE;
+	if (!cmd->stop_src || tmp != cmd->stop_src)
+		err++;
 
 	if (err)
 		return 1;
 
-	/* Step 2a : make sure trigger sources are unique */
+	/* step 2: trigger sources are unique and mutually compatible */
 
-	err |= cfc_check_trigger_is_unique(cmd->scan_begin_src);
-	err |= cfc_check_trigger_is_unique(cmd->stop_src);
-
-	/* Step 2b : and mutually compatible */
+	if (cmd->scan_begin_src != TRIG_TIMER &&
+	    cmd->scan_begin_src != TRIG_EXT)
+		err++;
+	if (cmd->stop_src != TRIG_COUNT && cmd->stop_src != TRIG_NONE)
+		err++;
 
 	if (err)
 		return 2;
@@ -1455,45 +1501,69 @@ static irqreturn_t cb_pcidas_interrupt(int irq, void *d)
 	return IRQ_HANDLED;
 }
 
-static const void *cb_pcidas_find_boardinfo(struct comedi_device *dev,
-					    struct pci_dev *pcidev)
+static struct pci_dev *cb_pcidas_find_pci_device(struct comedi_device *dev,
+						 struct comedi_devconfig *it)
 {
 	const struct cb_pcidas_board *thisboard;
+	struct pci_dev *pcidev = NULL;
+	int bus = it->options[0];
+	int slot = it->options[1];
 	int i;
 
-	for (i = 0; i < ARRAY_SIZE(cb_pcidas_boards); i++) {
-		thisboard = &cb_pcidas_boards[i];
-		if (thisboard->device_id == pcidev->device)
-			return thisboard;
+	for_each_pci_dev(pcidev) {
+		/*  is it not a computer boards card? */
+		if (pcidev->vendor != PCI_VENDOR_ID_CB)
+			continue;
+		/*  loop through cards supported by this driver */
+		for (i = 0; i < ARRAY_SIZE(cb_pcidas_boards); i++) {
+			thisboard = &cb_pcidas_boards[i];
+			if (thisboard->device_id != pcidev->device)
+				continue;
+			/*  was a particular bus/slot requested? */
+			if (bus || slot) {
+				/*  are we on the wrong bus/slot? */
+				if (pcidev->bus->number != bus ||
+				    PCI_SLOT(pcidev->devfn) != slot) {
+					continue;
+				}
+			}
+			dev_dbg(dev->class_dev,
+				"Found %s on bus %i, slot %i\n",
+				thisboard->name,
+				pcidev->bus->number, PCI_SLOT(pcidev->devfn));
+			dev->board_ptr = thisboard;
+			return pcidev;
+		}
 	}
+	dev_err(dev->class_dev, "No supported card found\n");
 	return NULL;
 }
 
-static int cb_pcidas_attach_pci(struct comedi_device *dev,
-				struct pci_dev *pcidev)
+static int cb_pcidas_attach(struct comedi_device *dev,
+			    struct comedi_devconfig *it)
 {
 	const struct cb_pcidas_board *thisboard;
 	struct cb_pcidas_private *devpriv;
+	struct pci_dev *pcidev;
 	struct comedi_subdevice *s;
 	int i;
 	int ret;
 
-	comedi_set_hw_dev(dev, &pcidev->dev);
-
-	thisboard = cb_pcidas_find_boardinfo(dev, pcidev);
-	if (!thisboard)
-		return -ENODEV;
-	dev->board_ptr  = thisboard;
-	dev->board_name = thisboard->name;
-
-	ret = alloc_private(dev, sizeof(*devpriv));
-	if (ret)
-		return ret;
+	if (alloc_private(dev, sizeof(struct cb_pcidas_private)) < 0)
+		return -ENOMEM;
 	devpriv = dev->private;
 
-	ret = comedi_pci_enable(pcidev, dev->board_name);
-	if (ret)
-		return ret;
+	pcidev = cb_pcidas_find_pci_device(dev, it);
+	if (!pcidev)
+		return -EIO;
+	comedi_set_hw_dev(dev, &pcidev->dev);
+	thisboard = comedi_board(dev);
+
+	if (comedi_pci_enable(pcidev, dev->driver->driver_name)) {
+		dev_err(dev->class_dev,
+			"Failed to enable PCI device and request regions\n");
+		return -EIO;
+	}
 
 	devpriv->s5933_config = pci_resource_start(pcidev, 0);
 	devpriv->control_status = pci_resource_start(pcidev, 1);
@@ -1514,11 +1584,13 @@ static int cb_pcidas_attach_pci(struct comedi_device *dev,
 	}
 	dev->irq = pcidev->irq;
 
+	dev->board_name = thisboard->name;
+
 	ret = comedi_alloc_subdevices(dev, 7);
 	if (ret)
 		return ret;
 
-	s = &dev->subdevices[0];
+	s = dev->subdevices + 0;
 	/* analog input subdevice */
 	dev->read_subdev = s;
 	s->type = COMEDI_SUBD_AI;
@@ -1535,7 +1607,7 @@ static int cb_pcidas_attach_pci(struct comedi_device *dev,
 	s->cancel = cb_pcidas_cancel;
 
 	/* analog output subdevice */
-	s = &dev->subdevices[1];
+	s = dev->subdevices + 1;
 	if (thisboard->ao_nchan) {
 		s->type = COMEDI_SUBD_AO;
 		s->subdev_flags = SDF_READABLE | SDF_WRITABLE | SDF_GROUND;
@@ -1562,14 +1634,14 @@ static int cb_pcidas_attach_pci(struct comedi_device *dev,
 	}
 
 	/* 8255 */
-	s = &dev->subdevices[2];
+	s = dev->subdevices + 2;
 	ret = subdev_8255_init(dev, s, NULL,
 			       devpriv->pacer_counter_dio + DIO_8255);
 	if (ret)
 		return ret;
 
 	/*  serial EEPROM, */
-	s = &dev->subdevices[3];
+	s = dev->subdevices + 3;
 	s->type = COMEDI_SUBD_MEMORY;
 	s->subdev_flags = SDF_READABLE | SDF_INTERNAL;
 	s->n_chan = 256;
@@ -1577,7 +1649,7 @@ static int cb_pcidas_attach_pci(struct comedi_device *dev,
 	s->insn_read = eeprom_read_insn;
 
 	/*  8800 caldac */
-	s = &dev->subdevices[4];
+	s = dev->subdevices + 4;
 	s->type = COMEDI_SUBD_CALIB;
 	s->subdev_flags = SDF_READABLE | SDF_WRITABLE | SDF_INTERNAL;
 	s->n_chan = NUM_CHANNELS_8800;
@@ -1588,7 +1660,7 @@ static int cb_pcidas_attach_pci(struct comedi_device *dev,
 		caldac_8800_write(dev, i, s->maxdata / 2);
 
 	/*  trim potentiometer */
-	s = &dev->subdevices[5];
+	s = dev->subdevices + 5;
 	s->type = COMEDI_SUBD_CALIB;
 	s->subdev_flags = SDF_READABLE | SDF_WRITABLE | SDF_INTERNAL;
 	if (thisboard->trimpot == AD7376) {
@@ -1604,7 +1676,7 @@ static int cb_pcidas_attach_pci(struct comedi_device *dev,
 		cb_pcidas_trimpot_write(dev, i, s->maxdata / 2);
 
 	/*  dac08 caldac */
-	s = &dev->subdevices[6];
+	s = dev->subdevices + 6;
 	if (thisboard->has_dac08) {
 		s->type = COMEDI_SUBD_CALIB;
 		s->subdev_flags = SDF_READABLE | SDF_WRITABLE | SDF_INTERNAL;
@@ -1626,10 +1698,7 @@ static int cb_pcidas_attach_pci(struct comedi_device *dev,
 	outl(devpriv->s5933_intcsr_bits | INTCSR_INBOX_INTR_STATUS,
 	     devpriv->s5933_config + AMCC_OP_REG_INTCSR);
 
-	dev_info(dev->class_dev, "%s: %s attached\n",
-		dev->driver->driver_name, dev->board_name);
-
-	return 0;
+	return 1;
 }
 
 static void cb_pcidas_detach(struct comedi_device *dev)
@@ -1646,17 +1715,18 @@ static void cb_pcidas_detach(struct comedi_device *dev)
 	if (dev->irq)
 		free_irq(dev->irq, dev);
 	if (dev->subdevices)
-		subdev_8255_cleanup(dev, &dev->subdevices[2]);
+		subdev_8255_cleanup(dev, dev->subdevices + 2);
 	if (pcidev) {
 		if (devpriv->s5933_config)
 			comedi_pci_disable(pcidev);
+		pci_dev_put(pcidev);
 	}
 }
 
 static struct comedi_driver cb_pcidas_driver = {
 	.driver_name	= "cb_pcidas",
 	.module		= THIS_MODULE,
-	.attach_pci	= cb_pcidas_attach_pci,
+	.attach		= cb_pcidas_attach,
 	.detach		= cb_pcidas_detach,
 };
 

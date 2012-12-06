@@ -1586,9 +1586,9 @@ il_fill_probe_req(struct il_priv *il, struct ieee80211_mgmt *frame,
 		return 0;
 
 	frame->frame_control = cpu_to_le16(IEEE80211_STYPE_PROBE_REQ);
-	eth_broadcast_addr(frame->da);
+	memcpy(frame->da, il_bcast_addr, ETH_ALEN);
 	memcpy(frame->sa, ta, ETH_ALEN);
-	eth_broadcast_addr(frame->bssid);
+	memcpy(frame->bssid, il_bcast_addr, ETH_ALEN);
 	frame->seq_ctrl = 0;
 
 	len += 24;
@@ -4860,7 +4860,7 @@ EXPORT_SYMBOL(il_add_beacon_time);
 
 #ifdef CONFIG_PM
 
-static int
+int
 il_pci_suspend(struct device *device)
 {
 	struct pci_dev *pdev = to_pci_dev(device);
@@ -4877,8 +4877,9 @@ il_pci_suspend(struct device *device)
 
 	return 0;
 }
+EXPORT_SYMBOL(il_pci_suspend);
 
-static int
+int
 il_pci_resume(struct device *device)
 {
 	struct pci_dev *pdev = to_pci_dev(device);
@@ -4905,8 +4906,16 @@ il_pci_resume(struct device *device)
 
 	return 0;
 }
+EXPORT_SYMBOL(il_pci_resume);
 
-SIMPLE_DEV_PM_OPS(il_pm_ops, il_pci_suspend, il_pci_resume);
+const struct dev_pm_ops il_pm_ops = {
+	.suspend = il_pci_suspend,
+	.resume = il_pci_resume,
+	.freeze = il_pci_suspend,
+	.thaw = il_pci_resume,
+	.poweroff = il_pci_suspend,
+	.restore = il_pci_resume,
+};
 EXPORT_SYMBOL(il_pm_ops);
 
 #endif /* CONFIG_PM */

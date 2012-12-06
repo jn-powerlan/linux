@@ -26,9 +26,9 @@
 #include <mach/common.h>
 #include <mach/cp_intc.h>
 #include <mach/da8xx.h>
-#include <linux/platform_data/mtd-davinci.h>
+#include <mach/nand.h>
 #include <mach/mux.h>
-#include <linux/platform_data/spi-davinci.h>
+#include <mach/spi.h>
 
 #define MITYOMAPL138_PHY_ID		""
 

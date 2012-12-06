@@ -23,7 +23,8 @@
 #include <linux/of_address.h>
 #include <linux/of_irq.h>
 
-#include "soc.h"
+#include <mach/hardware.h>
+
 #include "iomap.h"
 #include "common.h"
 
@@ -48,8 +49,6 @@
 #define OMAP3_IRQ_BASE		OMAP2_L4_IO_ADDRESS(OMAP34XX_IC_BASE)
 #define INTCPS_SIR_IRQ_OFFSET	0x0040	/* omap2/3 active interrupt offset */
 #define ACTIVEIRQ_MASK		0x7f	/* omap2/3 active interrupt bits */
-#define INTCPS_NR_MIR_REGS	3
-#define INTCPS_NR_IRQS		96
 
 /*
  * OMAP2 has a number of different interrupt controllers, each interrupt
@@ -108,8 +107,9 @@ static void __init omap_irq_bank_init_one(struct omap_irq_bank *bank)
 	unsigned long tmp;
 
 	tmp = intc_bank_read_reg(bank, INTC_REVISION) & 0xff;
-	pr_info("IRQ: Found an INTC at 0x%p (revision %ld.%ld) with %d interrupts\n",
-		bank->base_reg, tmp >> 4, tmp & 0xf, bank->nr_irqs);
+	printk(KERN_INFO "IRQ: Found an INTC at 0x%p "
+			 "(revision %ld.%ld) with %d interrupts\n",
+			 bank->base_reg, tmp >> 4, tmp & 0xf, bank->nr_irqs);
 
 	tmp = intc_bank_read_reg(bank, INTC_SYSCONFIG);
 	tmp |= 1 << 1;	/* soft reset */

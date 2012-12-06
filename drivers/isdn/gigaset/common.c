@@ -1123,6 +1123,7 @@ struct gigaset_driver *gigaset_initdriver(unsigned minor, unsigned minors,
 	return drv;
 
 error:
+	kfree(drv->cs);
 	kfree(drv);
 	return NULL;
 }

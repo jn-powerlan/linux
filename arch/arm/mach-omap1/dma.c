@@ -27,8 +27,7 @@
 
 #include <plat/dma.h>
 #include <plat/tc.h>
-
-#include <mach/irqs.h>
+#include <plat/irqs.h>
 
 #define OMAP1_DMA_BASE			(0xfffed800)
 #define OMAP1_LOGICAL_DMA_CH_COUNT	17
@@ -331,9 +330,8 @@ static int __init omap1_system_dma_init(void)
 	d->chan = kzalloc(sizeof(struct omap_dma_lch) *
 					(d->lch_count), GFP_KERNEL);
 	if (!d->chan) {
-		dev_err(&pdev->dev,
-			"%s: Memory allocation failed for d->chan!\n",
-			__func__);
+		dev_err(&pdev->dev, "%s: Memory allocation failed"
+					"for d->chan!!!\n", __func__);
 		goto exit_release_d;
 	}
 

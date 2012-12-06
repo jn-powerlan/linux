@@ -1454,7 +1454,7 @@ static int add_channel(struct ccw_device *cdev, enum ctcm_channel_types type,
 				ch_fsm_len, GFP_KERNEL);
 	}
 	if (ch->fsm == NULL)
-				goto nomem_return;
+				goto free_return;
 
 	fsm_newstate(ch->fsm, CTC_STATE_IDLE);
 

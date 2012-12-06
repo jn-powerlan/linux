@@ -28,7 +28,7 @@
 
 #define WL1271_WAKEUP_TIMEOUT 500
 
-#define ELP_ENTRY_DELAY  30
+#define ELP_ENTRY_DELAY  5
 
 void wl1271_elp_work(struct work_struct *work)
 {
@@ -44,7 +44,7 @@ void wl1271_elp_work(struct work_struct *work)
 
 	mutex_lock(&wl->mutex);
 
-	if (unlikely(wl->state != WLCORE_STATE_ON))
+	if (unlikely(wl->state == WL1271_STATE_OFF))
 		goto out;
 
 	/* our work might have been already cancelled */
@@ -98,7 +98,11 @@ void wl1271_ps_elp_sleep(struct wl1271 *wl)
 			return;
 	}
 
-	timeout = ELP_ENTRY_DELAY;
+	if (wl->conf.conn.forced_ps)
+		timeout = ELP_ENTRY_DELAY;
+	else
+		timeout = wl->conf.conn.dynamic_ps_timeout;
+
 	ieee80211_queue_delayed_work(wl->hw, &wl->elp_work,
 				     msecs_to_jiffies(timeout));
 }

@@ -156,13 +156,8 @@ static void set_normal_mode(struct net_device *dev)
 		}
 
 		/* set chip to normal mode */
-		if (priv->can.ctrlmode & CAN_CTRLMODE_LISTENONLY)
-			priv->write_reg(priv, REG_MOD, MOD_LOM);
-		else
-			priv->write_reg(priv, REG_MOD, 0x00);
-
+		priv->write_reg(priv, REG_MOD, 0x00);
 		udelay(10);
-
 		status = priv->read_reg(priv, REG_MOD);
 	}
 
@@ -315,10 +310,7 @@ static netdev_tx_t sja1000_start_xmit(struct sk_buff *skb,
 
 	can_put_echo_skb(skb, dev, 0);
 
-	if (priv->can.ctrlmode & CAN_CTRLMODE_ONE_SHOT)
-		sja1000_write_cmdreg(priv, CMD_TR | CMD_AT);
-	else
-		sja1000_write_cmdreg(priv, CMD_TR);
+	sja1000_write_cmdreg(priv, CMD_TR);
 
 	return NETDEV_TX_OK;
 }
@@ -513,18 +505,10 @@ irqreturn_t sja1000_interrupt(int irq, void *dev_id)
 			netdev_warn(dev, "wakeup interrupt\n");
 
 		if (isrc & IRQ_TI) {
-			/* transmission buffer released */
-			if (priv->can.ctrlmode & CAN_CTRLMODE_ONE_SHOT &&
-			    !(status & SR_TCS)) {
-				stats->tx_errors++;
-				can_free_echo_skb(dev, 0);
-			} else {
-				/* transmission complete */
-				stats->tx_bytes +=
-					priv->read_reg(priv, REG_FI) & 0xf;
-				stats->tx_packets++;
-				can_get_echo_skb(dev, 0);
-			}
+			/* transmission complete interrupt */
+			stats->tx_bytes += priv->read_reg(priv, REG_FI) & 0xf;
+			stats->tx_packets++;
+			can_get_echo_skb(dev, 0);
 			netif_wake_queue(dev);
 		}
 		if (isrc & IRQ_RI) {
@@ -621,8 +605,7 @@ struct net_device *alloc_sja1000dev(int sizeof_priv)
 	priv->can.do_set_mode = sja1000_set_mode;
 	priv->can.do_get_berr_counter = sja1000_get_berr_counter;
 	priv->can.ctrlmode_supported = CAN_CTRLMODE_3_SAMPLES |
-		CAN_CTRLMODE_BERR_REPORTING | CAN_CTRLMODE_LISTENONLY |
-		CAN_CTRLMODE_ONE_SHOT;
+		CAN_CTRLMODE_BERR_REPORTING;
 
 	spin_lock_init(&priv->cmdreg_lock);
 

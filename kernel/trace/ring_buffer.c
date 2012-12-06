@@ -2820,7 +2820,7 @@ EXPORT_SYMBOL_GPL(ring_buffer_record_enable);
  * to the buffer after this will fail and return NULL.
  *
  * This is different than ring_buffer_record_disable() as
- * it works like an on/off switch, where as the disable() version
+ * it works like an on/off switch, where as the disable() verison
  * must be paired with a enable().
  */
 void ring_buffer_record_off(struct ring_buffer *buffer)
@@ -2843,7 +2843,7 @@ EXPORT_SYMBOL_GPL(ring_buffer_record_off);
  * ring_buffer_record_off().
  *
  * This is different than ring_buffer_record_enable() as
- * it works like an on/off switch, where as the enable() version
+ * it works like an on/off switch, where as the enable() verison
  * must be paired with a disable().
  */
 void ring_buffer_record_on(struct ring_buffer *buffer)

@@ -45,17 +45,12 @@
 static __inline__ int scm_check_creds(struct ucred *creds)
 {
 	const struct cred *cred = current_cred();
-	kuid_t uid = make_kuid(cred->user_ns, creds->uid);
-	kgid_t gid = make_kgid(cred->user_ns, creds->gid);
-
-	if (!uid_valid(uid) || !gid_valid(gid))
-		return -EINVAL;
 
 	if ((creds->pid == task_tgid_vnr(current) || capable(CAP_SYS_ADMIN)) &&
-	    ((uid_eq(uid, cred->uid)   || uid_eq(uid, cred->euid) ||
-	      uid_eq(uid, cred->suid)) || capable(CAP_SETUID)) &&
-	    ((gid_eq(gid, cred->gid)   || gid_eq(gid, cred->egid) ||
-	      gid_eq(gid, cred->sgid)) || capable(CAP_SETGID))) {
+	    ((creds->uid == cred->uid   || creds->uid == cred->euid ||
+	      creds->uid == cred->suid) || capable(CAP_SETUID)) &&
+	    ((creds->gid == cred->gid   || creds->gid == cred->egid ||
+	      creds->gid == cred->sgid) || capable(CAP_SETGID))) {
 	       return 0;
 	}
 	return -EPERM;
@@ -154,54 +149,39 @@ int __scm_send(struct socket *sock, struct msghdr *msg, struct scm_cookie *p)
 				goto error;
 			break;
 		case SCM_CREDENTIALS:
-		{
-			struct ucred creds;
-			kuid_t uid;
-			kgid_t gid;
 			if (cmsg->cmsg_len != CMSG_LEN(sizeof(struct ucred)))
 				goto error;
-			memcpy(&creds, CMSG_DATA(cmsg), sizeof(struct ucred));
-			err = scm_check_creds(&creds);
+			memcpy(&p->creds, CMSG_DATA(cmsg), sizeof(struct ucred));
+			err = scm_check_creds(&p->creds);
 			if (err)
 				goto error;
 
-			p->creds.pid = creds.pid;
-			if (!p->pid || pid_vnr(p->pid) != creds.pid) {
+			if (!p->pid || pid_vnr(p->pid) != p->creds.pid) {
 				struct pid *pid;
 				err = -ESRCH;
-				pid = find_get_pid(creds.pid);
+				pid = find_get_pid(p->creds.pid);
 				if (!pid)
 					goto error;
 				put_pid(p->pid);
 				p->pid = pid;
 			}
 
-			err = -EINVAL;
-			uid = make_kuid(current_user_ns(), creds.uid);
-			gid = make_kgid(current_user_ns(), creds.gid);
-			if (!uid_valid(uid) || !gid_valid(gid))
-				goto error;
-
-			p->creds.uid = uid;
-			p->creds.gid = gid;
-
 			if (!p->cred ||
-			    !uid_eq(p->cred->euid, uid) ||
-			    !gid_eq(p->cred->egid, gid)) {
+			    (p->cred->euid != p->creds.uid) ||
+			    (p->cred->egid != p->creds.gid)) {
 				struct cred *cred;
 				err = -ENOMEM;
 				cred = prepare_creds();
 				if (!cred)
 					goto error;
 
-				cred->uid = cred->euid = uid;
-				cred->gid = cred->egid = gid;
+				cred->uid = cred->euid = p->creds.uid;
+				cred->gid = cred->egid = p->creds.gid;
 				if (p->cred)
 					put_cred(p->cred);
 				p->cred = cred;
 			}
 			break;
-		}
 		default:
 			goto error;
 		}
@@ -301,10 +281,11 @@ void scm_detach_fds(struct msghdr *msg, struct scm_cookie *scm)
 			break;
 		}
 		/* Bump the usage count and install the file. */
+		get_file(fp[i]);
 		sock = sock_from_file(fp[i], &err);
 		if (sock)
 			sock_update_netprioidx(sock->sk, current);
-		fd_install(new_fd, get_file(fp[i]));
+		fd_install(new_fd, fp[i]);
 	}
 
 	if (i > 0)

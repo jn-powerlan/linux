@@ -275,8 +275,14 @@ no_merge:
 int ll_back_merge_fn(struct request_queue *q, struct request *req,
 		     struct bio *bio)
 {
-	if (blk_rq_sectors(req) + bio_sectors(bio) >
-	    blk_rq_get_max_sectors(req)) {
+	unsigned short max_sectors;
+
+	if (unlikely(req->cmd_type == REQ_TYPE_BLOCK_PC))
+		max_sectors = queue_max_hw_sectors(q);
+	else
+		max_sectors = queue_max_sectors(q);
+
+	if (blk_rq_sectors(req) + bio_sectors(bio) > max_sectors) {
 		req->cmd_flags |= REQ_NOMERGE;
 		if (req == q->last_merge)
 			q->last_merge = NULL;
@@ -293,8 +299,15 @@ int ll_back_merge_fn(struct request_queue *q, struct request *req,
 int ll_front_merge_fn(struct request_queue *q, struct request *req,
 		      struct bio *bio)
 {
-	if (blk_rq_sectors(req) + bio_sectors(bio) >
-	    blk_rq_get_max_sectors(req)) {
+	unsigned short max_sectors;
+
+	if (unlikely(req->cmd_type == REQ_TYPE_BLOCK_PC))
+		max_sectors = queue_max_hw_sectors(q);
+	else
+		max_sectors = queue_max_sectors(q);
+
+
+	if (blk_rq_sectors(req) + bio_sectors(bio) > max_sectors) {
 		req->cmd_flags |= REQ_NOMERGE;
 		if (req == q->last_merge)
 			q->last_merge = NULL;
@@ -325,8 +338,7 @@ static int ll_merge_requests_fn(struct request_queue *q, struct request *req,
 	/*
 	 * Will it become too large?
 	 */
-	if ((blk_rq_sectors(req) + blk_rq_sectors(next)) >
-	    blk_rq_get_max_sectors(req))
+	if ((blk_rq_sectors(req) + blk_rq_sectors(next)) > queue_max_sectors(q))
 		return 0;
 
 	total_phys_segments = req->nr_phys_segments + next->nr_phys_segments;
@@ -405,7 +417,16 @@ static int attempt_merge(struct request_queue *q, struct request *req,
 	if (!rq_mergeable(req) || !rq_mergeable(next))
 		return 0;
 
-	if (!blk_check_merge_flags(req->cmd_flags, next->cmd_flags))
+	/*
+	 * Don't merge file system requests and discard requests
+	 */
+	if ((req->cmd_flags & REQ_DISCARD) != (next->cmd_flags & REQ_DISCARD))
+		return 0;
+
+	/*
+	 * Don't merge discard requests and secure discard requests
+	 */
+	if ((req->cmd_flags & REQ_SECURE) != (next->cmd_flags & REQ_SECURE))
 		return 0;
 
 	/*
@@ -417,10 +438,6 @@ static int attempt_merge(struct request_queue *q, struct request *req,
 	if (rq_data_dir(req) != rq_data_dir(next)
 	    || req->rq_disk != next->rq_disk
 	    || next->special)
-		return 0;
-
-	if (req->cmd_flags & REQ_WRITE_SAME &&
-	    !blk_write_same_mergeable(req->bio, next->bio))
 		return 0;
 
 	/*
@@ -504,10 +521,15 @@ int blk_attempt_req_merge(struct request_queue *q, struct request *rq,
 
 bool blk_rq_merge_ok(struct request *rq, struct bio *bio)
 {
-	if (!rq_mergeable(rq) || !bio_mergeable(bio))
+	if (!rq_mergeable(rq))
 		return false;
 
-	if (!blk_check_merge_flags(rq->cmd_flags, bio->bi_rw))
+	/* don't merge file system requests and discard requests */
+	if ((bio->bi_rw & REQ_DISCARD) != (rq->bio->bi_rw & REQ_DISCARD))
+		return false;
+
+	/* don't merge discard requests and secure discard requests */
+	if ((bio->bi_rw & REQ_SECURE) != (rq->bio->bi_rw & REQ_SECURE))
 		return false;
 
 	/* different data direction or already started, don't merge */
@@ -520,11 +542,6 @@ bool blk_rq_merge_ok(struct request *rq, struct bio *bio)
 
 	/* only merge integrity protected bio into ditto rq */
 	if (bio_integrity(bio) != blk_integrity_rq(rq))
-		return false;
-
-	/* must be using the same buffer */
-	if (rq->cmd_flags & REQ_WRITE_SAME &&
-	    !blk_write_same_mergeable(rq->bio, bio))
 		return false;
 
 	return true;

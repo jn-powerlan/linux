@@ -20,7 +20,8 @@
  */
 #include <linux/module.h>
 
-#include "soc.h"
+#include <plat/cpu.h>
+
 #include "control.h"
 #include "omap_opp_data.h"
 #include "pm.h"

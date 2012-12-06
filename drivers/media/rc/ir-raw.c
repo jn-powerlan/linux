@@ -157,9 +157,7 @@ EXPORT_SYMBOL_GPL(ir_raw_event_store_edge);
  * This routine (which may be called from an interrupt context) works
  * in similar manner to ir_raw_event_store_edge.
  * This routine is intended for devices with limited internal buffer
- * It automerges samples of same type, and handles timeouts. Returns non-zero
- * if the event was added, and zero if the event was ignored due to idle
- * processing.
+ * It automerges samples of same type, and handles timeouts
  */
 int ir_raw_event_store_with_filter(struct rc_dev *dev, struct ir_raw_event *ev)
 {
@@ -186,7 +184,7 @@ int ir_raw_event_store_with_filter(struct rc_dev *dev, struct ir_raw_event *ev)
 	    dev->raw->this_ev.duration >= dev->timeout)
 		ir_raw_event_set_idle(dev, true);
 
-	return 1;
+	return 0;
 }
 EXPORT_SYMBOL_GPL(ir_raw_event_store_with_filter);
 

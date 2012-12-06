@@ -10,7 +10,6 @@
 
 #define cpu_has_mips16		1
 #define cpu_has_dsp		1
-/* #define cpu_has_dsp2		??? - do runtime detection */
 #define cpu_has_mipsmt		1
 #define cpu_has_fpu		0
 

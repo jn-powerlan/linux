@@ -30,9 +30,9 @@
 
 #define pr_fmt(fmt) "[TTM] " fmt
 
-#include <drm/ttm/ttm_module.h>
-#include <drm/ttm/ttm_bo_driver.h>
-#include <drm/ttm/ttm_placement.h>
+#include "ttm/ttm_module.h"
+#include "ttm/ttm_bo_driver.h"
+#include "ttm/ttm_placement.h"
 #include <linux/jiffies.h>
 #include <linux/slab.h>
 #include <linux/sched.h>
@@ -580,7 +580,6 @@ retry:
 	if (unlikely(ret != 0))
 		return ret;
 
-retry_reserve:
 	spin_lock(&glob->lru_lock);
 
 	if (unlikely(list_empty(&bo->ddestroy))) {
@@ -588,19 +587,13 @@ retry_reserve:
 		return 0;
 	}
 
-	ret = ttm_bo_reserve_locked(bo, false, true, false, 0);
+	ret = ttm_bo_reserve_locked(bo, interruptible,
+				    no_wait_reserve, false, 0);
 
-	if (unlikely(ret == -EBUSY)) {
+	if (unlikely(ret != 0)) {
 		spin_unlock(&glob->lru_lock);
-		if (likely(!no_wait_reserve))
-			ret = ttm_bo_wait_unreserved(bo, interruptible);
-		if (unlikely(ret != 0))
-			return ret;
-
-		goto retry_reserve;
+		return ret;
 	}
-
-	BUG_ON(ret != 0);
 
 	/**
 	 * We can re-check for sync object without taking
@@ -818,14 +811,17 @@ retry:
 					  no_wait_reserve, no_wait_gpu);
 		kref_put(&bo->list_kref, ttm_bo_release_list);
 
-		return ret;
+		if (likely(ret == 0 || ret == -ERESTARTSYS))
+			return ret;
+
+		goto retry;
 	}
 
-	ret = ttm_bo_reserve_locked(bo, false, true, false, 0);
+	ret = ttm_bo_reserve_locked(bo, false, no_wait_reserve, false, 0);
 
 	if (unlikely(ret == -EBUSY)) {
 		spin_unlock(&glob->lru_lock);
-		if (likely(!no_wait_reserve))
+		if (likely(!no_wait_gpu))
 			ret = ttm_bo_wait_unreserved(bo, interruptible);
 
 		kref_put(&bo->list_kref, ttm_bo_release_list);

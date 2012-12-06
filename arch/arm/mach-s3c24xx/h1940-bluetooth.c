@@ -138,7 +138,19 @@ static struct platform_driver h1940bt_driver = {
 	.remove		= h1940bt_remove,
 };
 
-module_platform_driver(h1940bt_driver);
+
+static int __init h1940bt_init(void)
+{
+	return platform_driver_register(&h1940bt_driver);
+}
+
+static void __exit h1940bt_exit(void)
+{
+	platform_driver_unregister(&h1940bt_driver);
+}
+
+module_init(h1940bt_init);
+module_exit(h1940bt_exit);
 
 MODULE_AUTHOR("Arnaud Patard <arnaud.patard@rtp-net.org>");
 MODULE_DESCRIPTION("Driver for the iPAQ H1940 bluetooth chip");

@@ -17,7 +17,6 @@
 #include <pthread.h>
 
 const char 	*disassembler_style;
-const char	*objdump_path;
 
 static struct ins *ins__find(const char *name);
 static int disasm_line__parse(char *line, char **namep, char **rawp);
@@ -313,8 +312,8 @@ static struct ins_ops dec_ops = {
 	.scnprintf = dec__scnprintf,
 };
 
-static int nop__scnprintf(struct ins *ins __maybe_unused, char *bf, size_t size,
-			  struct ins_operands *ops __maybe_unused)
+static int nop__scnprintf(struct ins *ins __used, char *bf, size_t size,
+			  struct ins_operands *ops __used)
 {
 	return scnprintf(bf, size, "%-6.6s", "nop");
 }
@@ -416,7 +415,7 @@ static struct ins *ins__find(const char *name)
 	return bsearch(name, instructions, nmemb, sizeof(struct ins), ins__cmp);
 }
 
-int symbol__annotate_init(struct map *map __maybe_unused, struct symbol *sym)
+int symbol__annotate_init(struct map *map __used, struct symbol *sym)
 {
 	struct annotation *notes = symbol__annotation(sym);
 	pthread_mutex_init(&notes->lock, NULL);
@@ -821,10 +820,9 @@ fallback:
 		 dso, dso->long_name, sym, sym->name);
 
 	snprintf(command, sizeof(command),
-		 "%s %s%s --start-address=0x%016" PRIx64
+		 "objdump %s%s --start-address=0x%016" PRIx64
 		 " --stop-address=0x%016" PRIx64
 		 " -d %s %s -C %s|grep -v %s|expand",
-		 objdump_path ? objdump_path : "objdump",
 		 disassembler_style ? "-M " : "",
 		 disassembler_style ? disassembler_style : "",
 		 map__rip_2objdump(map, sym->start),
@@ -984,18 +982,13 @@ int symbol__annotate_printf(struct symbol *sym, struct map *map, int evidx,
 			    int context)
 {
 	struct dso *dso = map->dso;
-	char *filename;
-	const char *d_filename;
+	const char *filename = dso->long_name, *d_filename;
 	struct annotation *notes = symbol__annotation(sym);
 	struct disasm_line *pos, *queue = NULL;
 	u64 start = map__rip_2objdump(map, sym->start);
 	int printed = 2, queue_len = 0;
 	int more = 0;
 	u64 len;
-
-	filename = strdup(dso->long_name);
-	if (!filename)
-		return -ENOMEM;
 
 	if (full_paths)
 		d_filename = filename;
@@ -1046,8 +1039,6 @@ int symbol__annotate_printf(struct symbol *sym, struct map *map, int evidx,
 			break;
 		}
 	}
-
-	free(filename);
 
 	return more;
 }

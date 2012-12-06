@@ -27,11 +27,10 @@
 #ifdef CONFIG_HAVE_HW_BREAKPOINT
 
 struct arch_hw_breakpoint {
-	unsigned long	address;
-	unsigned long	dabrx;
-	int		type;
-	u8		len; /* length of the target data symbol */
 	bool		extraneous_interrupt;
+	u8		len; /* length of the target data symbol */
+	int		type;
+	unsigned long	address;
 };
 
 #include <linux/kdebug.h>
@@ -62,7 +61,7 @@ extern void ptrace_triggered(struct perf_event *bp,
 			struct perf_sample_data *data, struct pt_regs *regs);
 static inline void hw_breakpoint_disable(void)
 {
-	set_dabr(0, 0);
+	set_dabr(0);
 }
 extern void thread_change_pc(struct task_struct *tsk, struct pt_regs *regs);
 

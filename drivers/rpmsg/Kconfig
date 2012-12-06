@@ -4,6 +4,7 @@ menu "Rpmsg drivers (EXPERIMENTAL)"
 config RPMSG
 	tristate
 	select VIRTIO
+	select VIRTIO_RING
 	depends on EXPERIMENTAL
 
 endmenu

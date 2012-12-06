@@ -73,7 +73,7 @@ int arch_install_hw_breakpoint(struct perf_event *bp)
 	 * If so, DABR will be populated in single_step_dabr_instruction().
 	 */
 	if (current->thread.last_hit_ubp != bp)
-		set_dabr(info->address | info->type | DABR_TRANSLATION, info->dabrx);
+		set_dabr(info->address | info->type | DABR_TRANSLATION);
 
 	return 0;
 }
@@ -97,7 +97,7 @@ void arch_uninstall_hw_breakpoint(struct perf_event *bp)
 	}
 
 	*slot = NULL;
-	set_dabr(0, 0);
+	set_dabr(0);
 }
 
 /*
@@ -170,13 +170,6 @@ int arch_validate_hwbkpt_settings(struct perf_event *bp)
 
 	info->address = bp->attr.bp_addr;
 	info->len = bp->attr.bp_len;
-	info->dabrx = DABRX_ALL;
-	if (bp->attr.exclude_user)
-		info->dabrx &= ~DABRX_USER;
-	if (bp->attr.exclude_kernel)
-		info->dabrx &= ~DABRX_KERNEL;
-	if (bp->attr.exclude_hv)
-		info->dabrx &= ~DABRX_HYP;
 
 	/*
 	 * Since breakpoint length can be a maximum of HW_BREAKPOINT_LEN(8)
@@ -204,7 +197,7 @@ void thread_change_pc(struct task_struct *tsk, struct pt_regs *regs)
 
 	info = counter_arch_bp(tsk->thread.last_hit_ubp);
 	regs->msr &= ~MSR_SE;
-	set_dabr(info->address | info->type | DABR_TRANSLATION, info->dabrx);
+	set_dabr(info->address | info->type | DABR_TRANSLATION);
 	tsk->thread.last_hit_ubp = NULL;
 }
 
@@ -222,7 +215,7 @@ int __kprobes hw_breakpoint_handler(struct die_args *args)
 	unsigned long dar = regs->dar;
 
 	/* Disable breakpoints during exception handling */
-	set_dabr(0, 0);
+	set_dabr(0);
 
 	/*
 	 * The counter may be concurrently released but that can only
@@ -288,7 +281,7 @@ int __kprobes hw_breakpoint_handler(struct die_args *args)
 	if (!info->extraneous_interrupt)
 		perf_bp_event(bp, regs);
 
-	set_dabr(info->address | info->type | DABR_TRANSLATION, info->dabrx);
+	set_dabr(info->address | info->type | DABR_TRANSLATION);
 out:
 	rcu_read_unlock();
 	return rc;
@@ -301,7 +294,7 @@ int __kprobes single_step_dabr_instruction(struct die_args *args)
 {
 	struct pt_regs *regs = args->regs;
 	struct perf_event *bp = NULL;
-	struct arch_hw_breakpoint *info;
+	struct arch_hw_breakpoint *bp_info;
 
 	bp = current->thread.last_hit_ubp;
 	/*
@@ -311,16 +304,16 @@ int __kprobes single_step_dabr_instruction(struct die_args *args)
 	if (!bp)
 		return NOTIFY_DONE;
 
-	info = counter_arch_bp(bp);
+	bp_info = counter_arch_bp(bp);
 
 	/*
 	 * We shall invoke the user-defined callback function in the single
 	 * stepping handler to confirm to 'trigger-after-execute' semantics
 	 */
-	if (!info->extraneous_interrupt)
+	if (!bp_info->extraneous_interrupt)
 		perf_bp_event(bp, regs);
 
-	set_dabr(info->address | info->type | DABR_TRANSLATION, info->dabrx);
+	set_dabr(bp_info->address | bp_info->type | DABR_TRANSLATION);
 	current->thread.last_hit_ubp = NULL;
 
 	/*

@@ -382,7 +382,7 @@ static int mio_cs_attach(struct comedi_device *dev, struct comedi_devconfig *it)
 	devpriv->stc_writel = &win_out2;
 	devpriv->stc_readl = &win_in2;
 
-	ret = ni_E_init(dev);
+	ret = ni_E_init(dev, it);
 
 	if (ret < 0)
 		return ret;
@@ -421,7 +421,7 @@ MODULE_AUTHOR("David A. Schleef <ds@schleef.org>");
 MODULE_DESCRIPTION("Comedi driver for National Instruments DAQCard E series");
 MODULE_LICENSE("GPL");
 
-static struct pcmcia_driver ni_mio_cs_driver = {
+struct pcmcia_driver ni_mio_cs_driver = {
 	.probe = &cs_attach,
 	.remove = &cs_detach,
 	.suspend = &mio_cs_suspend,

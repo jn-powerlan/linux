@@ -19,7 +19,7 @@
  * DMA queue management APIs shared between TRIO and mPIPE.
  */
 
-#include <gxio/common.h>
+#include "common.h"
 
 /* The credit counter lives in the high 32 bits. */
 #define DMA_QUEUE_CREDIT_SHIFT 32

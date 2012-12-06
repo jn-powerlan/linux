@@ -17,6 +17,8 @@
 #include <asm/cp15.h>
 #include <asm/smp_plat.h>
 
+extern volatile int pen_release;
+
 static inline void cpu_enter_lowpower(void)
 {
 	unsigned int v;
@@ -54,7 +56,7 @@ static inline void cpu_leave_lowpower(void)
 	: "cc");
 }
 
-static inline void spear13xx_do_lowpower(unsigned int cpu, int *spurious)
+static inline void platform_do_lowpower(unsigned int cpu, int *spurious)
 {
 	for (;;) {
 		wfi();
@@ -77,12 +79,17 @@ static inline void spear13xx_do_lowpower(unsigned int cpu, int *spurious)
 	}
 }
 
+int platform_cpu_kill(unsigned int cpu)
+{
+	return 1;
+}
+
 /*
  * platform-specific code to shutdown a CPU
  *
  * Called with IRQs disabled
  */
-void __ref spear13xx_cpu_die(unsigned int cpu)
+void __cpuinit platform_cpu_die(unsigned int cpu)
 {
 	int spurious = 0;
 
@@ -90,7 +97,7 @@ void __ref spear13xx_cpu_die(unsigned int cpu)
 	 * we're ready for shutdown now, so do it
 	 */
 	cpu_enter_lowpower();
-	spear13xx_do_lowpower(cpu, &spurious);
+	platform_do_lowpower(cpu, &spurious);
 
 	/*
 	 * bring this CPU back into the world of cache
@@ -100,4 +107,13 @@ void __ref spear13xx_cpu_die(unsigned int cpu)
 
 	if (spurious)
 		pr_warn("CPU%u: %u spurious wakeup calls\n", cpu, spurious);
+}
+
+int platform_cpu_disable(unsigned int cpu)
+{
+	/*
+	 * we don't allow CPU 0 to be shutdown (it is still too special
+	 * e.g. clock tick interrupts)
+	 */
+	return cpu == 0 ? -EPERM : 0;
 }

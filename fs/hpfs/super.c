@@ -210,11 +210,6 @@ static int init_inodecache(void)
 
 static void destroy_inodecache(void)
 {
-	/*
-	 * Make sure all delayed rcu free inodes are flushed before we
-	 * destroy cache.
-	 */
-	rcu_barrier();
 	kmem_cache_destroy(hpfs_inode_cachep);
 }
 
@@ -256,7 +251,7 @@ static const match_table_t tokens = {
 	{Opt_err, NULL},
 };
 
-static int parse_opts(char *opts, kuid_t *uid, kgid_t *gid, umode_t *umask,
+static int parse_opts(char *opts, uid_t *uid, gid_t *gid, umode_t *umask,
 		      int *lowercase, int *eas, int *chk, int *errs,
 		      int *chkdsk, int *timeshift)
 {
@@ -281,16 +276,12 @@ static int parse_opts(char *opts, kuid_t *uid, kgid_t *gid, umode_t *umask,
 		case Opt_uid:
 			if (match_int(args, &option))
 				return 0;
-			*uid = make_kuid(current_user_ns(), option);
-			if (!uid_valid(*uid))
-				return 0;
+			*uid = option;
 			break;
 		case Opt_gid:
 			if (match_int(args, &option))
 				return 0;
-			*gid = make_kgid(current_user_ns(), option);
-			if (!gid_valid(*gid))
-				return 0;
+			*gid = option;
 			break;
 		case Opt_umask:
 			if (match_octal(args, &option))
@@ -387,8 +378,8 @@ HPFS filesystem options:\n\
 
 static int hpfs_remount_fs(struct super_block *s, int *flags, char *data)
 {
-	kuid_t uid;
-	kgid_t gid;
+	uid_t uid;
+	gid_t gid;
 	umode_t umask;
 	int lowercase, eas, chk, errs, chkdsk, timeshift;
 	int o;
@@ -398,6 +389,7 @@ static int hpfs_remount_fs(struct super_block *s, int *flags, char *data)
 	*flags |= MS_NOATIME;
 	
 	hpfs_lock(s);
+	lock_super(s);
 	uid = sbi->sb_uid; gid = sbi->sb_gid;
 	umask = 0777 & ~sbi->sb_mode;
 	lowercase = sbi->sb_lowercase;
@@ -430,10 +422,12 @@ static int hpfs_remount_fs(struct super_block *s, int *flags, char *data)
 
 	replace_mount_options(s, new_opts);
 
+	unlock_super(s);
 	hpfs_unlock(s);
 	return 0;
 
 out_err:
+	unlock_super(s);
 	hpfs_unlock(s);
 	kfree(new_opts);
 	return -EINVAL;
@@ -461,8 +455,8 @@ static int hpfs_fill_super(struct super_block *s, void *options, int silent)
 	struct hpfs_sb_info *sbi;
 	struct inode *root;
 
-	kuid_t uid;
-	kgid_t gid;
+	uid_t uid;
+	gid_t gid;
 	umode_t umask;
 	int lowercase, eas, chk, errs, chkdsk, timeshift;
 

@@ -27,10 +27,10 @@
 #include <linux/clk.h>
 #include <linux/mutex.h>
 
-#include <linux/platform_data/dma-imx.h>
+#include <mach/dma.h>
 #include <mach/hardware.h>
 #include <mach/ipu.h>
-#include <linux/platform_data/video-mx3fb.h>
+#include <mach/mx3fb.h>
 
 #include <asm/io.h>
 #include <asm/uaccess.h>
@@ -1568,8 +1568,7 @@ static int mx3fb_remove(struct platform_device *dev)
 
 static struct platform_driver mx3fb_driver = {
 	.driver = {
-		.name = MX3FB_NAME,
-		.owner = THIS_MODULE,
+		   .name = MX3FB_NAME,
 	},
 	.probe = mx3fb_probe,
 	.remove = mx3fb_remove,

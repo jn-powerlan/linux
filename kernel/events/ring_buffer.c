@@ -182,16 +182,10 @@ out:
 	return -ENOSPC;
 }
 
-unsigned int perf_output_copy(struct perf_output_handle *handle,
+void perf_output_copy(struct perf_output_handle *handle,
 		      const void *buf, unsigned int len)
 {
-	return __output_copy(handle, buf, len);
-}
-
-unsigned int perf_output_skip(struct perf_output_handle *handle,
-			      unsigned int len)
-{
-	return __output_skip(handle, NULL, len);
+	__output_copy(handle, buf, len);
 }
 
 void perf_output_end(struct perf_output_handle *handle)

@@ -67,7 +67,6 @@ static int __devinit t3e3_init_channel(struct channel *channel, struct pci_dev *
 	dev = alloc_hdlcdev(channel);
 	if (!dev) {
 		printk(KERN_ERR "SBE 2T3E3" ": Out of memory\n");
-		err = -ENOMEM;
 		goto free_regions;
 	}
 
@@ -83,9 +82,8 @@ static int __devinit t3e3_init_channel(struct channel *channel, struct pci_dev *
 	else
 		channel->h.slot = 0;
 
-	err = setup_device(dev, channel);
-	if (err)
-		goto free_dev;
+	if (setup_device(dev, channel))
+		goto free_regions;
 
 	pci_read_config_dword(channel->pdev, 0x40, &val); /* mask sleep mode */
 	pci_write_config_dword(channel->pdev, 0x40, val & 0x3FFFFFFF);
@@ -94,19 +92,14 @@ static int __devinit t3e3_init_channel(struct channel *channel, struct pci_dev *
 	pci_read_config_dword(channel->pdev, PCI_COMMAND, &channel->h.command);
 	t3e3_init(channel);
 
-	err = request_irq(dev->irq, &t3e3_intr, IRQF_SHARED, dev->name, dev);
-	if (err) {
+	if (request_irq(dev->irq, &t3e3_intr, IRQF_SHARED, dev->name, dev)) {
 		printk(KERN_WARNING "%s: could not get irq: %d\n", dev->name, dev->irq);
-		goto unregister_dev;
+		goto free_regions;
 	}
 
 	pci_set_drvdata(pdev, channel);
 	return 0;
 
-unregister_dev:
-	unregister_hdlc_device(dev);
-free_dev:
-	free_netdev(dev);
 free_regions:
 	pci_release_regions(pdev);
 disable:

@@ -35,7 +35,6 @@
 #include <asm/setup.h>
 #include <asm/mach-types.h>
 
-#include <video/samsung_fimd.h>
 #include <mach/map.h>
 #include <mach/regs-clock.h>
 
@@ -44,12 +43,13 @@
 #include <plat/devs.h>
 #include <plat/cpu.h>
 #include <plat/fb.h>
-#include <linux/platform_data/i2c-s3c2410.h>
+#include <plat/iic.h>
 #include <plat/keypad.h>
 #include <plat/sdhci.h>
 #include <plat/clock.h>
 #include <plat/s5p-time.h>
 #include <plat/mfc.h>
+#include <plat/regs-fb-v4.h>
 #include <plat/camport.h>
 
 #include <media/v4l2-mediabus.h>

@@ -24,7 +24,7 @@
 #include <asm/io.h>
 #include <asm/mach-types.h>
 
-#include <mach/mux.h>
+#include <plat/mux.h>
 #include <plat/fpga.h>
 
 #include <mach/hardware.h>

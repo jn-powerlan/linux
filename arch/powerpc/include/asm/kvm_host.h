@@ -53,8 +53,6 @@
 
 struct kvm;
 extern int kvm_unmap_hva(struct kvm *kvm, unsigned long hva);
-extern int kvm_unmap_hva_range(struct kvm *kvm,
-			       unsigned long start, unsigned long end);
 extern int kvm_age_hva(struct kvm *kvm, unsigned long hva);
 extern int kvm_test_age_hva(struct kvm *kvm, unsigned long hva);
 extern void kvm_set_spte_hva(struct kvm *kvm, unsigned long hva, pte_t pte);
@@ -222,7 +220,6 @@ struct revmap_entry {
 #define KVMPPC_GOT_PAGE		0x80
 
 struct kvm_arch_memory_slot {
-	unsigned long *rmap;
 };
 
 struct kvm_arch {

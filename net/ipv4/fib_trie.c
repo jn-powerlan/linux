@@ -1550,8 +1550,7 @@ int fib_table_lookup(struct fib_table *tb, const struct flowi4 *flp,
 		 * state.directly.
 		 */
 		if (pref_mismatch) {
-			/* fls(x) = __fls(x) + 1 */
-			int mp = KEYLENGTH - __fls(pref_mismatch) - 1;
+			int mp = KEYLENGTH - fls(pref_mismatch);
 
 			if (tkey_extract_bits(cn->key, mp, cn->pos - mp) != 0)
 				goto backtrace;
@@ -1656,12 +1655,7 @@ int fib_table_delete(struct fib_table *tb, struct fib_config *cfg)
 	if (!l)
 		return -ESRCH;
 
-	li = find_leaf_info(l, plen);
-
-	if (!li)
-		return -ESRCH;
-
-	fa_head = &li->falh;
+	fa_head = get_fa_head(l, plen);
 	fa = fib_find_alias(fa_head, tos, 0);
 
 	if (!fa)
@@ -1696,6 +1690,9 @@ int fib_table_delete(struct fib_table *tb, struct fib_config *cfg)
 	fa = fa_to_delete;
 	rtmsg_fib(RTM_DELROUTE, htonl(key), fa, plen, tb->tb_id,
 		  &cfg->fc_nlinfo, 0);
+
+	l = fib_find_node(t, key);
+	li = find_leaf_info(l, plen);
 
 	list_del_rcu(&fa->fa_list);
 
@@ -1873,7 +1870,7 @@ static int fn_trie_dump_fa(t_key key, int plen, struct list_head *fah,
 			continue;
 		}
 
-		if (fib_dump_info(skb, NETLINK_CB(cb->skb).portid,
+		if (fib_dump_info(skb, NETLINK_CB(cb->skb).pid,
 				  cb->nlh->nlmsg_seq,
 				  RTM_NEWROUTE,
 				  tb->tb_id,

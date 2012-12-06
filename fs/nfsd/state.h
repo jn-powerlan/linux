@@ -373,7 +373,11 @@ static inline struct nfs4_lockowner * lockowner(struct nfs4_stateowner *so)
 	return container_of(so, struct nfs4_lockowner, lo_owner);
 }
 
-/* nfs4_file: a file opened by some number of (open) nfs4_stateowners. */
+/*
+*  nfs4_file: a file opened by some number of (open) nfs4_stateowners.
+*    o fi_perfile list is used to search for conflicting 
+*      share_acces, share_deny on the file.
+*/
 struct nfs4_file {
 	atomic_t		fi_ref;
 	struct list_head        fi_hash;    /* hash by "struct inode *" */
@@ -455,7 +459,7 @@ extern void nfs4_unlock_state(void);
 extern int nfs4_in_grace(void);
 extern void nfs4_release_reclaim(void);
 extern struct nfs4_client_reclaim *nfsd4_find_reclaim_client(struct nfs4_client *crp);
-extern __be32 nfs4_check_open_reclaim(clientid_t *clid, bool sessions);
+extern __be32 nfs4_check_open_reclaim(clientid_t *clid);
 extern void nfs4_free_openowner(struct nfs4_openowner *);
 extern void nfs4_free_lockowner(struct nfs4_lockowner *);
 extern int set_callback_cred(void);

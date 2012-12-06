@@ -9,17 +9,13 @@
  * License.
  *
  * File: ima_api.c
- *	Implements must_appraise_or_measure, collect_measurement,
- *	appraise_measurement, store_measurement and store_template.
+ *	Implements must_measure, collect_measurement, store_measurement,
+ *	and store_template.
  */
 #include <linux/module.h>
 #include <linux/slab.h>
-#include <linux/file.h>
-#include <linux/fs.h>
-#include <linux/xattr.h>
-#include <linux/evm.h>
-#include "ima.h"
 
+#include "ima.h"
 static const char *IMA_TEMPLATE_NAME = "ima";
 
 /*
@@ -97,7 +93,7 @@ err_out:
 }
 
 /**
- * ima_get_action - appraise & measure decision based on policy.
+ * ima_must_measure - measure decision based on policy.
  * @inode: pointer to inode to measure
  * @mask: contains the permission mask (MAY_READ, MAY_WRITE, MAY_EXECUTE)
  * @function: calling function (FILE_CHECK, BPRM_CHECK, FILE_MMAP)
@@ -109,22 +105,15 @@ err_out:
  * 	mask: contains the permission mask
  *	fsmagic: hex value
  *
- * Returns IMA_MEASURE, IMA_APPRAISE mask.
- *
- */
-int ima_get_action(struct inode *inode, int mask, int function)
-{
-	int flags = IMA_MEASURE | IMA_AUDIT | IMA_APPRAISE;
-
-	if (!ima_appraise)
-		flags &= ~IMA_APPRAISE;
-
-	return ima_match_policy(inode, function, mask, flags);
-}
-
+ * Return 0 to measure. For matching a DONT_MEASURE policy, no policy,
+ * or other error, return an error code.
+*/
 int ima_must_measure(struct inode *inode, int mask, int function)
 {
-	return ima_match_policy(inode, function, mask, IMA_MEASURE);
+	int must_measure;
+
+	must_measure = ima_match_policy(inode, function, mask);
+	return must_measure ? 0 : -EACCES;
 }
 
 /*
@@ -140,24 +129,16 @@ int ima_must_measure(struct inode *inode, int mask, int function)
 int ima_collect_measurement(struct integrity_iint_cache *iint,
 			    struct file *file)
 {
-	struct inode *inode = file->f_dentry->d_inode;
-	const char *filename = file->f_dentry->d_name.name;
-	int result = 0;
+	int result = -EEXIST;
 
-	if (!(iint->flags & IMA_COLLECTED)) {
+	if (!(iint->flags & IMA_MEASURED)) {
 		u64 i_version = file->f_dentry->d_inode->i_version;
 
-		iint->ima_xattr.type = IMA_XATTR_DIGEST;
-		result = ima_calc_hash(file, iint->ima_xattr.digest);
-		if (!result) {
+		memset(iint->digest, 0, IMA_DIGEST_SIZE);
+		result = ima_calc_hash(file, iint->digest);
+		if (!result)
 			iint->version = i_version;
-			iint->flags |= IMA_COLLECTED;
-		}
 	}
-	if (result)
-		integrity_audit_msg(AUDIT_INTEGRITY_DATA, inode,
-				    filename, "collect_data", "failed",
-				    result, 0);
 	return result;
 }
 
@@ -186,9 +167,6 @@ void ima_store_measurement(struct integrity_iint_cache *iint,
 	struct ima_template_entry *entry;
 	int violation = 0;
 
-	if (iint->flags & IMA_MEASURED)
-		return;
-
 	entry = kmalloc(sizeof(*entry), GFP_KERNEL);
 	if (!entry) {
 		integrity_audit_msg(AUDIT_INTEGRITY_PCR, inode, filename,
@@ -196,7 +174,7 @@ void ima_store_measurement(struct integrity_iint_cache *iint,
 		return;
 	}
 	memset(&entry->template, 0, sizeof(entry->template));
-	memcpy(entry->template.digest, iint->ima_xattr.digest, IMA_DIGEST_SIZE);
+	memcpy(entry->template.digest, iint->digest, IMA_DIGEST_SIZE);
 	strcpy(entry->template.file_name,
 	       (strlen(filename) > IMA_EVENT_NAME_LEN_MAX) ?
 	       file->f_dentry->d_name.name : filename);
@@ -206,34 +184,4 @@ void ima_store_measurement(struct integrity_iint_cache *iint,
 		iint->flags |= IMA_MEASURED;
 	if (result < 0)
 		kfree(entry);
-}
-
-void ima_audit_measurement(struct integrity_iint_cache *iint,
-			   const unsigned char *filename)
-{
-	struct audit_buffer *ab;
-	char hash[(IMA_DIGEST_SIZE * 2) + 1];
-	int i;
-
-	if (iint->flags & IMA_AUDITED)
-		return;
-
-	for (i = 0; i < IMA_DIGEST_SIZE; i++)
-		hex_byte_pack(hash + (i * 2), iint->ima_xattr.digest[i]);
-	hash[i * 2] = '\0';
-
-	ab = audit_log_start(current->audit_context, GFP_KERNEL,
-			     AUDIT_INTEGRITY_RULE);
-	if (!ab)
-		return;
-
-	audit_log_format(ab, "file=");
-	audit_log_untrustedstring(ab, filename);
-	audit_log_format(ab, " hash=");
-	audit_log_untrustedstring(ab, hash);
-
-	audit_log_task_info(ab, current);
-	audit_log_end(ab);
-
-	iint->flags |= IMA_AUDITED;
 }

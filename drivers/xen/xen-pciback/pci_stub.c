@@ -682,14 +682,14 @@ static pci_ers_result_t xen_pcibk_slot_reset(struct pci_dev *dev)
 		dev_err(&dev->dev, DRV_NAME " device is not connected or owned"
 			" by HVM, kill it\n");
 		kill_domain_by_device(psdev);
-		goto end;
+		goto release;
 	}
 
 	if (!test_bit(_XEN_PCIB_AERHANDLER,
 		(unsigned long *)&psdev->pdev->sh_info->flags)) {
 		dev_err(&dev->dev,
 			"guest with no AER driver should have been killed\n");
-		goto end;
+		goto release;
 	}
 	result = common_process(psdev, 1, XEN_PCI_OP_aer_slotreset, result);
 
@@ -699,9 +699,9 @@ static pci_ers_result_t xen_pcibk_slot_reset(struct pci_dev *dev)
 			"No AER slot_reset service or disconnected!\n");
 		kill_domain_by_device(psdev);
 	}
+release:
+	pcistub_device_put(psdev);
 end:
-	if (psdev)
-		pcistub_device_put(psdev);
 	up_write(&pcistub_sem);
 	return result;
 
@@ -740,14 +740,14 @@ static pci_ers_result_t xen_pcibk_mmio_enabled(struct pci_dev *dev)
 		dev_err(&dev->dev, DRV_NAME " device is not connected or owned"
 			" by HVM, kill it\n");
 		kill_domain_by_device(psdev);
-		goto end;
+		goto release;
 	}
 
 	if (!test_bit(_XEN_PCIB_AERHANDLER,
 		(unsigned long *)&psdev->pdev->sh_info->flags)) {
 		dev_err(&dev->dev,
 			"guest with no AER driver should have been killed\n");
-		goto end;
+		goto release;
 	}
 	result = common_process(psdev, 1, XEN_PCI_OP_aer_mmio, result);
 
@@ -757,9 +757,9 @@ static pci_ers_result_t xen_pcibk_mmio_enabled(struct pci_dev *dev)
 			"No AER mmio_enabled service or disconnected!\n");
 		kill_domain_by_device(psdev);
 	}
+release:
+	pcistub_device_put(psdev);
 end:
-	if (psdev)
-		pcistub_device_put(psdev);
 	up_write(&pcistub_sem);
 	return result;
 }
@@ -798,7 +798,7 @@ static pci_ers_result_t xen_pcibk_error_detected(struct pci_dev *dev,
 		dev_err(&dev->dev, DRV_NAME " device is not connected or owned"
 			" by HVM, kill it\n");
 		kill_domain_by_device(psdev);
-		goto end;
+		goto release;
 	}
 
 	/*Guest owns the device yet no aer handler regiested, kill guest*/
@@ -806,7 +806,7 @@ static pci_ers_result_t xen_pcibk_error_detected(struct pci_dev *dev,
 		(unsigned long *)&psdev->pdev->sh_info->flags)) {
 		dev_dbg(&dev->dev, "guest may have no aer driver, kill it\n");
 		kill_domain_by_device(psdev);
-		goto end;
+		goto release;
 	}
 	result = common_process(psdev, error, XEN_PCI_OP_aer_detected, result);
 
@@ -816,9 +816,9 @@ static pci_ers_result_t xen_pcibk_error_detected(struct pci_dev *dev,
 			"No AER error_detected service or disconnected!\n");
 		kill_domain_by_device(psdev);
 	}
+release:
+	pcistub_device_put(psdev);
 end:
-	if (psdev)
-		pcistub_device_put(psdev);
 	up_write(&pcistub_sem);
 	return result;
 }
@@ -852,7 +852,7 @@ static void xen_pcibk_error_resume(struct pci_dev *dev)
 		dev_err(&dev->dev, DRV_NAME " device is not connected or owned"
 			" by HVM, kill it\n");
 		kill_domain_by_device(psdev);
-		goto end;
+		goto release;
 	}
 
 	if (!test_bit(_XEN_PCIB_AERHANDLER,
@@ -860,19 +860,19 @@ static void xen_pcibk_error_resume(struct pci_dev *dev)
 		dev_err(&dev->dev,
 			"guest with no AER driver should have been killed\n");
 		kill_domain_by_device(psdev);
-		goto end;
+		goto release;
 	}
 	common_process(psdev, 1, XEN_PCI_OP_aer_resume,
 		       PCI_ERS_RESULT_RECOVERED);
+release:
+	pcistub_device_put(psdev);
 end:
-	if (psdev)
-		pcistub_device_put(psdev);
 	up_write(&pcistub_sem);
 	return;
 }
 
 /*add xen_pcibk AER handling*/
-static const struct pci_error_handlers xen_pcibk_error_handler = {
+static struct pci_error_handlers xen_pcibk_error_handler = {
 	.error_detected = xen_pcibk_error_detected,
 	.mmio_enabled = xen_pcibk_mmio_enabled,
 	.slot_reset = xen_pcibk_slot_reset,
@@ -898,41 +898,17 @@ static inline int str_to_slot(const char *buf, int *domain, int *bus,
 			      int *slot, int *func)
 {
 	int err;
-	char wc = '*';
 
 	err = sscanf(buf, " %x:%x:%x.%x", domain, bus, slot, func);
-	switch (err) {
-	case 3:
-		*func = -1;
-		err = sscanf(buf, " %x:%x:%x.%c", domain, bus, slot, &wc);
-		break;
-	case 2:
-		*slot = *func = -1;
-		err = sscanf(buf, " %x:%x:*.%c", domain, bus, &wc);
-		if (err >= 2)
-			++err;
-		break;
-	}
-	if (err == 4 && wc == '*')
+	if (err == 4)
 		return 0;
 	else if (err < 0)
 		return -EINVAL;
 
 	/* try again without domain */
 	*domain = 0;
-	wc = '*';
 	err = sscanf(buf, " %x:%x.%x", bus, slot, func);
-	switch (err) {
-	case 2:
-		*func = -1;
-		err = sscanf(buf, " %x:%x.%c", bus, slot, &wc);
-		break;
-	case 1:
-		*slot = *func = -1;
-		err = sscanf(buf, " %x:*.%c", bus, &wc) + 1;
-		break;
-	}
-	if (err == 3 && wc == '*')
+	if (err == 3)
 		return 0;
 
 	return -EINVAL;
@@ -955,19 +931,6 @@ static int pcistub_device_id_add(int domain, int bus, int slot, int func)
 {
 	struct pcistub_device_id *pci_dev_id;
 	unsigned long flags;
-	int rc = 0;
-
-	if (slot < 0) {
-		for (slot = 0; !rc && slot < 32; ++slot)
-			rc = pcistub_device_id_add(domain, bus, slot, func);
-		return rc;
-	}
-
-	if (func < 0) {
-		for (func = 0; !rc && func < 8; ++func)
-			rc = pcistub_device_id_add(domain, bus, slot, func);
-		return rc;
-	}
 
 	pci_dev_id = kmalloc(sizeof(*pci_dev_id), GFP_KERNEL);
 	if (!pci_dev_id)
@@ -990,15 +953,15 @@ static int pcistub_device_id_add(int domain, int bus, int slot, int func)
 static int pcistub_device_id_remove(int domain, int bus, int slot, int func)
 {
 	struct pcistub_device_id *pci_dev_id, *t;
+	int devfn = PCI_DEVFN(slot, func);
 	int err = -ENOENT;
 	unsigned long flags;
 
 	spin_lock_irqsave(&device_ids_lock, flags);
 	list_for_each_entry_safe(pci_dev_id, t, &pcistub_device_ids,
 				 slot_list) {
-		if (pci_dev_id->domain == domain && pci_dev_id->bus == bus
-		    && (slot < 0 || PCI_SLOT(pci_dev_id->devfn) == slot)
-		    && (func < 0 || PCI_FUNC(pci_dev_id->devfn) == func)) {
+		if (pci_dev_id->domain == domain
+		    && pci_dev_id->bus == bus && pci_dev_id->devfn == devfn) {
 			/* Don't break; here because it's possible the same
 			 * slot could be in the list more than once
 			 */
@@ -1025,7 +988,7 @@ static int pcistub_reg_add(int domain, int bus, int slot, int func, int reg,
 	struct config_field *field;
 
 	psdev = pcistub_device_find(domain, bus, slot, func);
-	if (!psdev) {
+	if (!psdev || !psdev->dev) {
 		err = -ENODEV;
 		goto out;
 	}
@@ -1049,8 +1012,6 @@ static int pcistub_reg_add(int domain, int bus, int slot, int func, int reg,
 	if (err)
 		kfree(field);
 out:
-	if (psdev)
-		pcistub_device_put(psdev);
 	return err;
 }
 
@@ -1155,9 +1116,10 @@ static ssize_t pcistub_irq_handler_switch(struct device_driver *drv,
 
 	err = str_to_slot(buf, &domain, &bus, &slot, &func);
 	if (err)
-		return err;
+		goto out;
 
 	psdev = pcistub_device_find(domain, bus, slot, func);
+
 	if (!psdev)
 		goto out;
 
@@ -1173,8 +1135,6 @@ static ssize_t pcistub_irq_handler_switch(struct device_driver *drv,
 	if (dev_data->isr_on)
 		dev_data->ack_intr = 1;
 out:
-	if (psdev)
-		pcistub_device_put(psdev);
 	if (!err)
 		err = count;
 	return err;
@@ -1257,16 +1217,15 @@ static ssize_t permissive_add(struct device_driver *drv, const char *buf,
 	err = str_to_slot(buf, &domain, &bus, &slot, &func);
 	if (err)
 		goto out;
-	if (slot < 0 || func < 0) {
-		err = -EINVAL;
-		goto out;
-	}
 	psdev = pcistub_device_find(domain, bus, slot, func);
 	if (!psdev) {
 		err = -ENODEV;
 		goto out;
 	}
-
+	if (!psdev->dev) {
+		err = -ENODEV;
+		goto release;
+	}
 	dev_data = pci_get_drvdata(psdev->dev);
 	/* the driver data for a device should never be null at this point */
 	if (!dev_data) {
@@ -1339,51 +1298,17 @@ static int __init pcistub_init(void)
 
 	if (pci_devs_to_hide && *pci_devs_to_hide) {
 		do {
-			char wc = '*';
-
 			parsed = 0;
 
 			err = sscanf(pci_devs_to_hide + pos,
 				     " (%x:%x:%x.%x) %n",
 				     &domain, &bus, &slot, &func, &parsed);
-			switch (err) {
-			case 3:
-				func = -1;
-				err = sscanf(pci_devs_to_hide + pos,
-					     " (%x:%x:%x.%c) %n",
-					     &domain, &bus, &slot, &wc,
-					     &parsed);
-				break;
-			case 2:
-				slot = func = -1;
-				err = sscanf(pci_devs_to_hide + pos,
-					     " (%x:%x:*.%c) %n",
-					     &domain, &bus, &wc, &parsed) + 1;
-				break;
-			}
-
-			if (err != 4 || wc != '*') {
+			if (err != 4) {
 				domain = 0;
-				wc = '*';
 				err = sscanf(pci_devs_to_hide + pos,
 					     " (%x:%x.%x) %n",
 					     &bus, &slot, &func, &parsed);
-				switch (err) {
-				case 2:
-					func = -1;
-					err = sscanf(pci_devs_to_hide + pos,
-						     " (%x:%x.%c) %n",
-						     &bus, &slot, &wc,
-						     &parsed);
-					break;
-				case 1:
-					slot = func = -1;
-					err = sscanf(pci_devs_to_hide + pos,
-						     " (%x:*.%c) %n",
-						     &bus, &wc, &parsed) + 1;
-					break;
-				}
-				if (err != 3 || wc != '*')
+				if (err != 3)
 					goto parse_error;
 			}
 

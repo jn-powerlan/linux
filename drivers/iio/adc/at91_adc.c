@@ -82,7 +82,7 @@ static irqreturn_t at91_adc_trigger_handler(int irq, void *p)
 		*timestamp = pf->timestamp;
 	}
 
-	buffer->access->store_to(buffer, (u8 *)st->buffer);
+	buffer->access->store_to(buffer, (u8 *)st->buffer, pf->timestamp);
 
 	iio_trigger_notify_done(idev->trig);
 	st->irq_enabled = true;
@@ -545,6 +545,13 @@ static int __devinit at91_adc_probe(struct platform_device *pdev)
 		goto error_free_device;
 	}
 
+	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	if (!res) {
+		dev_err(&pdev->dev, "No resource defined\n");
+		ret = -ENXIO;
+		goto error_ret;
+	}
+
 	platform_set_drvdata(pdev, idev);
 
 	idev->dev.parent = &pdev->dev;
@@ -559,12 +566,18 @@ static int __devinit at91_adc_probe(struct platform_device *pdev)
 		goto error_free_device;
 	}
 
-	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-
-	st->reg_base = devm_request_and_ioremap(&pdev->dev, res);
-	if (!st->reg_base) {
-		ret = -ENOMEM;
+	if (!request_mem_region(res->start, resource_size(res),
+				"AT91 adc registers")) {
+		dev_err(&pdev->dev, "Resources are unavailable.\n");
+		ret = -EBUSY;
 		goto error_free_device;
+	}
+
+	st->reg_base = ioremap(res->start, resource_size(res));
+	if (!st->reg_base) {
+		dev_err(&pdev->dev, "Failed to map registers.\n");
+		ret = -ENOMEM;
+		goto error_release_mem;
 	}
 
 	/*
@@ -579,35 +592,45 @@ static int __devinit at91_adc_probe(struct platform_device *pdev)
 			  idev);
 	if (ret) {
 		dev_err(&pdev->dev, "Failed to allocate IRQ.\n");
-		goto error_free_device;
+		goto error_unmap_reg;
 	}
 
-	st->clk = devm_clk_get(&pdev->dev, "adc_clk");
+	st->clk = clk_get(&pdev->dev, "adc_clk");
 	if (IS_ERR(st->clk)) {
 		dev_err(&pdev->dev, "Failed to get the clock.\n");
 		ret = PTR_ERR(st->clk);
 		goto error_free_irq;
 	}
 
-	ret = clk_prepare_enable(st->clk);
+	ret = clk_prepare(st->clk);
 	if (ret) {
-		dev_err(&pdev->dev,
-			"Could not prepare or enable the clock.\n");
-		goto error_free_irq;
+		dev_err(&pdev->dev, "Could not prepare the clock.\n");
+		goto error_free_clk;
 	}
 
-	st->adc_clk = devm_clk_get(&pdev->dev, "adc_op_clk");
+	ret = clk_enable(st->clk);
+	if (ret) {
+		dev_err(&pdev->dev, "Could not enable the clock.\n");
+		goto error_unprepare_clk;
+	}
+
+	st->adc_clk = clk_get(&pdev->dev, "adc_op_clk");
 	if (IS_ERR(st->adc_clk)) {
 		dev_err(&pdev->dev, "Failed to get the ADC clock.\n");
 		ret = PTR_ERR(st->adc_clk);
 		goto error_disable_clk;
 	}
 
-	ret = clk_prepare_enable(st->adc_clk);
+	ret = clk_prepare(st->adc_clk);
 	if (ret) {
-		dev_err(&pdev->dev,
-			"Could not prepare or enable the ADC clock.\n");
-		goto error_disable_clk;
+		dev_err(&pdev->dev, "Could not prepare the ADC clock.\n");
+		goto error_free_adc_clk;
+	}
+
+	ret = clk_enable(st->adc_clk);
+	if (ret) {
+		dev_err(&pdev->dev, "Could not enable the ADC clock.\n");
+		goto error_unprepare_adc_clk;
 	}
 
 	/*
@@ -671,11 +694,23 @@ error_remove_triggers:
 error_unregister_buffer:
 	at91_adc_buffer_remove(idev);
 error_disable_adc_clk:
-	clk_disable_unprepare(st->adc_clk);
+	clk_disable(st->adc_clk);
+error_unprepare_adc_clk:
+	clk_unprepare(st->adc_clk);
+error_free_adc_clk:
+	clk_put(st->adc_clk);
 error_disable_clk:
-	clk_disable_unprepare(st->clk);
+	clk_disable(st->clk);
+error_unprepare_clk:
+	clk_unprepare(st->clk);
+error_free_clk:
+	clk_put(st->clk);
 error_free_irq:
 	free_irq(st->irq, idev);
+error_unmap_reg:
+	iounmap(st->reg_base);
+error_release_mem:
+	release_mem_region(res->start, resource_size(res));
 error_free_device:
 	iio_device_free(idev);
 error_ret:
@@ -685,14 +720,20 @@ error_ret:
 static int __devexit at91_adc_remove(struct platform_device *pdev)
 {
 	struct iio_dev *idev = platform_get_drvdata(pdev);
+	struct resource *res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	struct at91_adc_state *st = iio_priv(idev);
 
 	iio_device_unregister(idev);
 	at91_adc_trigger_remove(idev);
 	at91_adc_buffer_remove(idev);
 	clk_disable_unprepare(st->adc_clk);
-	clk_disable_unprepare(st->clk);
+	clk_put(st->adc_clk);
+	clk_disable(st->clk);
+	clk_unprepare(st->clk);
+	clk_put(st->clk);
 	free_irq(st->irq, idev);
+	iounmap(st->reg_base);
+	release_mem_region(res->start, resource_size(res));
 	iio_device_free(idev);
 
 	return 0;

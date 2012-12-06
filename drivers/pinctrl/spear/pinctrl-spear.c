@@ -244,7 +244,7 @@ static int spear_pinctrl_endisable(struct pinctrl_dev *pctldev,
 			else
 				temp = ~muxreg->val;
 
-			val |= muxreg->mask & temp;
+			val |= temp;
 			pmx_writel(pmx, val, muxreg->reg);
 		}
 	}

@@ -16,7 +16,6 @@
 #include <linux/opp.h>
 #include <linux/export.h>
 #include <linux/suspend.h>
-#include <linux/cpu.h>
 
 #include <asm/system_misc.h>
 
@@ -81,8 +80,7 @@ static void __init omap2_init_processor_devices(void)
 
 int __init omap_pm_clkdms_setup(struct clockdomain *clkdm, void *unused)
 {
-	if ((clkdm->flags & CLKDM_CAN_ENABLE_AUTO) &&
-	    !(clkdm->flags & CLKDM_MISSING_IDLE_REPORTING))
+	if (clkdm->flags & CLKDM_CAN_ENABLE_AUTO)
 		clkdm_allow_idle(clkdm);
 	else if (clkdm->flags & CLKDM_CAN_FORCE_SLEEP &&
 		 atomic_read(&clkdm->usecount) == 0)
@@ -170,15 +168,7 @@ static int __init omap2_set_init_voltage(char *vdd_name, char *clk_name,
 		goto exit;
 	}
 
-	if (!strncmp(oh_name, "mpu", 3))
-		/* 
-		 * All current OMAPs share voltage rail and clock
-		 * source, so CPU0 is used to represent the MPU-SS.
-		 */
-		dev = get_cpu_device(0);
-	else
-		dev = omap_device_get_by_hwmod_name(oh_name);
-
+	dev = omap_device_get_by_hwmod_name(oh_name);
 	if (IS_ERR(dev)) {
 		pr_err("%s: Unable to get dev pointer for hwmod %s\n",
 			__func__, oh_name);
@@ -186,7 +176,7 @@ static int __init omap2_set_init_voltage(char *vdd_name, char *clk_name,
 	}
 
 	voltdm = voltdm_lookup(vdd_name);
-	if (!voltdm) {
+	if (IS_ERR(voltdm)) {
 		pr_err("%s: unable to get vdd pointer for vdd_%s\n",
 			__func__, vdd_name);
 		goto exit;
@@ -198,7 +188,7 @@ static int __init omap2_set_init_voltage(char *vdd_name, char *clk_name,
 		goto exit;
 	}
 
-	freq = clk_get_rate(clk);
+	freq = clk->rate;
 	clk_put(clk);
 
 	rcu_read_lock();
@@ -213,8 +203,8 @@ static int __init omap2_set_init_voltage(char *vdd_name, char *clk_name,
 	bootup_volt = opp_get_voltage(opp);
 	rcu_read_unlock();
 	if (!bootup_volt) {
-		pr_err("%s: unable to find voltage corresponding to the bootup OPP for vdd_%s\n",
-		       __func__, vdd_name);
+		pr_err("%s: unable to find voltage corresponding "
+			"to the bootup OPP for vdd_%s\n", __func__, vdd_name);
 		goto exit;
 	}
 

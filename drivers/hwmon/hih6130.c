@@ -33,7 +33,6 @@
 #include <linux/mutex.h>
 #include <linux/device.h>
 #include <linux/delay.h>
-#include <linux/jiffies.h>
 
 /**
  * struct hih6130 - HIH-6130 device specific data

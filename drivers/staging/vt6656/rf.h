@@ -63,7 +63,7 @@
 extern const BYTE RFaby11aChannelIndex[200];
 /*---------------------  Export Functions  --------------------------*/
 
-BOOL IFRFbWriteEmbedded(PSDevice pDevice, DWORD dwData);
+BOOL IFRFbWriteEmbeded(PSDevice pDevice, DWORD dwData);
 BOOL RFbSetPower(PSDevice pDevice, unsigned int uRATE, unsigned int uCH);
 
 BOOL RFbRawSetPower(

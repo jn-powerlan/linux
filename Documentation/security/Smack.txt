@@ -28,11 +28,12 @@ Smack kernels use the CIPSO IP option. Some network
 configurations are intolerant of IP options and can impede
 access to systems that use them as Smack does.
 
-The current git repository for Smack user space is:
+The current git repositories for Smack user space are:
 
-	git://github.com/smack-team/smack.git
+	git@gitorious.org:meego-platform-security/smackutil.git
+	git@gitorious.org:meego-platform-security/libsmack.git
 
-This should make and install on most modern distributions.
+These should make and install on most modern distributions.
 There are three commands included in smackutil:
 
 smackload  - properly formats data for writing to /smack/load
@@ -193,9 +194,6 @@ onlycap
 	these capabilities are effective at for processes with any
 	label. The value is set by writing the desired label to the
 	file or cleared by writing "-" to the file.
-revoke-subject
-	Writing a Smack label here sets the access to '-' for all access
-	rules with that subject label.
 
 You can add access rules in /etc/smack/accesses. They take the form:
 

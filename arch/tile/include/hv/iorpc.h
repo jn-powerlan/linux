@@ -248,7 +248,7 @@
 #if defined(__HV__)
 #include <hv/hypervisor.h>
 #elif defined(__KERNEL__)
-#include <hv/hypervisor.h>
+#include "hypervisor.h"
 #include <linux/types.h>
 #else
 #include <stdint.h>

@@ -23,13 +23,9 @@
 #include <linux/netfilter/ipset/ip_set_timeout.h>
 #include <linux/netfilter/ipset/ip_set_hash.h>
 
-#define REVISION_MIN	0
-/*			1    Range as input support for IPv4 added */
-#define REVISION_MAX	2 /* nomatch flag support added */
-
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Jozsef Kadlecsik <kadlec@blackhole.kfki.hu>");
-IP_SET_MODULE_DESC("hash:net", REVISION_MIN, REVISION_MAX);
+MODULE_DESCRIPTION("hash:net type of IP sets");
 MODULE_ALIAS("ip_set_hash:net");
 
 /* Type specific function prefix */
@@ -90,10 +86,10 @@ hash_net4_data_flags(struct hash_net4_elem *dst, u32 flags)
 	dst->nomatch = flags & IPSET_FLAG_NOMATCH;
 }
 
-static inline int
+static inline bool
 hash_net4_data_match(const struct hash_net4_elem *elem)
 {
-	return elem->nomatch ? -ENOTEMPTY : 1;
+	return !elem->nomatch;
 }
 
 static inline void
@@ -156,7 +152,7 @@ static inline void
 hash_net4_data_next(struct ip_set_hash *h,
 		    const struct hash_net4_elem *d)
 {
-	h->next.ip = d->ip;
+	h->next.ip = ntohl(d->ip);
 }
 
 static int
@@ -239,7 +235,7 @@ hash_net4_uadt(struct ip_set *set, struct nlattr *tb[],
 			return -IPSET_ERR_HASH_RANGE;
 	}
 	if (retried)
-		ip = ntohl(h->next.ip);
+		ip = h->next.ip;
 	while (!after(ip, ip_to)) {
 		data.ip = htonl(ip);
 		last = ip_set_range_to_cidr(ip, ip_to, &data.cidr);
@@ -311,10 +307,10 @@ hash_net6_data_flags(struct hash_net6_elem *dst, u32 flags)
 	dst->nomatch = flags & IPSET_FLAG_NOMATCH;
 }
 
-static inline int
+static inline bool
 hash_net6_data_match(const struct hash_net6_elem *elem)
 {
-	return elem->nomatch ? -ENOTEMPTY : 1;
+	return !elem->nomatch;
 }
 
 static inline void
@@ -536,11 +532,12 @@ hash_net_create(struct ip_set *set, struct nlattr *tb[], u32 flags)
 static struct ip_set_type hash_net_type __read_mostly = {
 	.name		= "hash:net",
 	.protocol	= IPSET_PROTOCOL,
-	.features	= IPSET_TYPE_IP | IPSET_TYPE_NOMATCH,
+	.features	= IPSET_TYPE_IP,
 	.dimension	= IPSET_DIM_ONE,
 	.family		= NFPROTO_UNSPEC,
-	.revision_min	= REVISION_MIN,
-	.revision_max	= REVISION_MAX,
+	.revision_min	= 0,
+	/*		= 1 	   Range as input support for IPv4 added */
+	.revision_max	= 2,	/* nomatch flag support added */
 	.create		= hash_net_create,
 	.create_policy	= {
 		[IPSET_ATTR_HASHSIZE]	= { .type = NLA_U32 },

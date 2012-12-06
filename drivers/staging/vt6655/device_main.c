@@ -290,7 +290,7 @@ DEFINE_PCI_DEVICE_TABLE(vt6655_pci_id_table) = {
 
 
 static int  vt6655_probe(struct pci_dev *pcid, const struct pci_device_id *ent);
-static void vt6655_init_info(struct pci_dev* pcid, PSDevice* ppDevice, PCHIP_INFO);
+static bool vt6655_init_info(struct pci_dev* pcid, PSDevice* ppDevice, PCHIP_INFO);
 static void device_free_info(PSDevice pDevice);
 static bool device_get_pci_info(PSDevice, struct pci_dev* pcid);
 static void device_print_info(PSDevice pDevice);
@@ -347,22 +347,21 @@ static int Config_FileGetParameter(unsigned char *string,
 
 
 
-static char* get_chip_name(int chip_id)
-{
-	int i;
-	for (i = 0; chip_info_table[i].name != NULL; i++)
-		if (chip_info_table[i].chip_id == chip_id)
-			break;
-	return chip_info_table[i].name;
+static char* get_chip_name(int chip_id) {
+    int i;
+    for (i=0;chip_info_table[i].name!=NULL;i++)
+        if (chip_info_table[i].chip_id==chip_id)
+            break;
+    return chip_info_table[i].name;
 }
 
 static void __devexit vt6655_remove(struct pci_dev *pcid)
 {
-	PSDevice pDevice = pci_get_drvdata(pcid);
+    PSDevice pDevice=pci_get_drvdata(pcid);
 
-	if (pDevice == NULL)
-		return;
-	device_free_info(pDevice);
+    if (pDevice==NULL)
+        return;
+    device_free_info(pDevice);
 
 }
 
@@ -398,29 +397,31 @@ device_set_bool_opt(unsigned int *opt, int val,bool def,u32 flag, char* name,cha
     }
 }
 */
-static void device_get_options(PSDevice pDevice, int index, char* devname)
-{
-	POPTIONS pOpts = &(pDevice->sOpts);
+static void
+device_get_options(PSDevice pDevice, int index, char* devname) {
 
-	pOpts->nRxDescs0 = RX_DESC_DEF0;
-	pOpts->nRxDescs1 = RX_DESC_DEF1;
-	pOpts->nTxDescs[0] = TX_DESC_DEF0;
-	pOpts->nTxDescs[1] = TX_DESC_DEF1;
-	pOpts->flags |= DEVICE_FLAGS_IP_ALIGN;
-	pOpts->int_works = INT_WORKS_DEF;
-	pOpts->rts_thresh = RTS_THRESH_DEF;
-	pOpts->frag_thresh = FRAG_THRESH_DEF;
-	pOpts->data_rate = DATA_RATE_DEF;
-	pOpts->channel_num = CHANNEL_DEF;
+    POPTIONS pOpts = &(pDevice->sOpts);
+  pOpts->nRxDescs0=RX_DESC_DEF0;
+  pOpts->nRxDescs1=RX_DESC_DEF1;
+  pOpts->nTxDescs[0]=TX_DESC_DEF0;
+  pOpts->nTxDescs[1]=TX_DESC_DEF1;
+pOpts->flags|=DEVICE_FLAGS_IP_ALIGN;
+  pOpts->int_works=INT_WORKS_DEF;
+  pOpts->rts_thresh=RTS_THRESH_DEF;
+  pOpts->frag_thresh=FRAG_THRESH_DEF;
+  pOpts->data_rate=DATA_RATE_DEF;
+  pOpts->channel_num=CHANNEL_DEF;
 
-	pOpts->flags |= DEVICE_FLAGS_PREAMBLE_TYPE;
-	pOpts->flags |= DEVICE_FLAGS_OP_MODE;
-	//pOpts->flags|=DEVICE_FLAGS_PS_MODE;
-	pOpts->short_retry = SHORT_RETRY_DEF;
-	pOpts->long_retry = LONG_RETRY_DEF;
-	pOpts->bbp_type = BBP_TYPE_DEF;
-	pOpts->flags |= DEVICE_FLAGS_80211h_MODE;
-	pOpts->flags |= DEVICE_FLAGS_DiversityANT;
+pOpts->flags|=DEVICE_FLAGS_PREAMBLE_TYPE;
+pOpts->flags|=DEVICE_FLAGS_OP_MODE;
+//pOpts->flags|=DEVICE_FLAGS_PS_MODE;
+  pOpts->short_retry=SHORT_RETRY_DEF;
+  pOpts->long_retry=LONG_RETRY_DEF;
+  pOpts->bbp_type=BBP_TYPE_DEF;
+pOpts->flags|=DEVICE_FLAGS_80211h_MODE;
+pOpts->flags|=DEVICE_FLAGS_DiversityANT;
+
+
 }
 
 static void
@@ -517,7 +518,7 @@ static void s_vCompleteCurrentMeasure (PSDevice pDevice, unsigned char byResult)
 
 
 //
-// Initialisation of MAC & BBP registers
+// Initialiation of MAC & BBP registers
 //
 
 static void device_init_registers(PSDevice pDevice, DEVICE_INIT_TYPE InitType)
@@ -893,14 +894,17 @@ static bool device_release_WPADEV(PSDevice pDevice)
     return true;
 }
 
+
 static const struct net_device_ops device_netdev_ops = {
-	.ndo_open               = device_open,
-	.ndo_stop               = device_close,
-	.ndo_do_ioctl           = device_ioctl,
-	.ndo_get_stats          = device_get_stats,
-	.ndo_start_xmit         = device_xmit,
-	.ndo_set_rx_mode	= device_set_multi,
+    .ndo_open               = device_open,
+    .ndo_stop               = device_close,
+    .ndo_do_ioctl           = device_ioctl,
+    .ndo_get_stats          = device_get_stats,
+    .ndo_start_xmit         = device_xmit,
+    .ndo_set_rx_mode	    = device_set_multi,
 };
+
+
 
 static int __devinit
 vt6655_probe(struct pci_dev *pcid, const struct pci_device_id *ent)
@@ -922,7 +926,7 @@ vt6655_probe(struct pci_dev *pcid, const struct pci_device_id *ent)
 
     if (dev == NULL) {
         printk(KERN_ERR DEVICE_NAME ": allocate net device failed \n");
-        return -ENOMEM;
+        return -ENODEV;
     }
 
     // Chain it all together
@@ -935,7 +939,9 @@ vt6655_probe(struct pci_dev *pcid, const struct pci_device_id *ent)
         bFirst=false;
     }
 
-    vt6655_init_info(pcid, &pDevice, pChip_info);
+    if (!vt6655_init_info(pcid, &pDevice, pChip_info)) {
+        return -ENOMEM;
+    }
     pDevice->dev = dev;
     pDevice->next_module = root_device_dev;
     root_device_dev = dev;
@@ -1058,7 +1064,7 @@ vt6655_probe(struct pci_dev *pcid, const struct pci_device_id *ent)
     //Mask out the options cannot be set to the chip
     pDevice->sOpts.flags &= pChip_info->flags;
 
-    //Enable the chip specified capabilities
+    //Enable the chip specified capbilities
     pDevice->flags = pDevice->sOpts.flags | (pChip_info->flags & 0xFF000000UL);
     pDevice->tx_80211 = device_dma0_tx_80211;
     pDevice->sMgmtObj.pAdapter = (void *)pDevice;
@@ -1099,7 +1105,7 @@ static void device_print_info(PSDevice pDevice)
 
 }
 
-static void __devinit vt6655_init_info(struct pci_dev* pcid, PSDevice* ppDevice,
+static bool __devinit vt6655_init_info(struct pci_dev* pcid, PSDevice* ppDevice,
     PCHIP_INFO pChip_info) {
 
     PSDevice p;
@@ -1123,6 +1129,8 @@ static void __devinit vt6655_init_info(struct pci_dev* pcid, PSDevice* ppDevice,
     (*ppDevice)->multicast_limit =32;
 
     spin_lock_init(&((*ppDevice)->lock));
+
+    return true;
 }
 
 static bool device_get_pci_info(PSDevice pDevice, struct pci_dev* pcid) {
@@ -1670,7 +1678,7 @@ static int device_tx_srv(PSDevice pDevice, unsigned int uIdx) {
                 uFrameSize = pTD->pTDInfo->dwReqCount - uFIFOHeaderSize;
                 pTxBufHead = (PSTxBufHead) (pTD->pTDInfo->buf);
                 // Update the statistics based on the Transmit status
-                // now, we DONT check TSR0_CDH
+                // now, we DO'NT check TSR0_CDH
 
                 STAvUpdateTDStatCounter(&pDevice->scStatistic,
                         byTsr0, byTsr1,
@@ -2652,7 +2660,7 @@ static  irqreturn_t  device_intr(int irq,  void *dev_instance) {
         (pDevice->byLocalID != REV_ID_VT3253_B0) &&
         (pDevice->bBSSIDFilter == true)) {
         // update RSSI
-        //BBbReadEmbedded(pDevice->PortOffset, 0x3E, &byRSSI);
+        //BBbReadEmbeded(pDevice->PortOffset, 0x3E, &byRSSI);
         //pDevice->uCurrRSSI = byRSSI;
     }
     */

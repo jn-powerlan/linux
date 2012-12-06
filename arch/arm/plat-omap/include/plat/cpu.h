@@ -30,8 +30,6 @@
 #ifndef __ASM_ARCH_OMAP_CPU_H
 #define __ASM_ARCH_OMAP_CPU_H
 
-#ifndef __ASSEMBLY__
-
 #include <linux/bitops.h>
 #include <plat/multi.h>
 
@@ -495,5 +493,4 @@ OMAP4_HAS_FEATURE(mpu_1ghz, MPU_1GHZ)
 OMAP4_HAS_FEATURE(mpu_1_2ghz, MPU_1_2GHZ)
 OMAP4_HAS_FEATURE(mpu_1_5ghz, MPU_1_5GHZ)
 
-#endif	/* __ASSEMBLY__ */
 #endif

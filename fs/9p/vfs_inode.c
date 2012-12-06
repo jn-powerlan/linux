@@ -1276,12 +1276,12 @@ static int v9fs_readlink(struct dentry *dentry, char *buffer, int buflen)
 	}
 
 	/* copy extension buffer into buffer */
-	retval = min(strlen(st->extension)+1, (size_t)buflen);
-	memcpy(buffer, st->extension, retval);
+	strncpy(buffer, st->extension, buflen);
 
-	p9_debug(P9_DEBUG_VFS, "%s -> %s (%.*s)\n",
-		 dentry->d_name.name, st->extension, buflen, buffer);
+	p9_debug(P9_DEBUG_VFS, "%s -> %s (%s)\n",
+		 dentry->d_name.name, st->extension, buffer);
 
+	retval = strnlen(buffer, buflen);
 done:
 	p9stat_free(st);
 	kfree(st);

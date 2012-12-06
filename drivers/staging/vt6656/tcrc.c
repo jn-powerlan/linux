@@ -18,7 +18,7 @@
  *
  * File: tcrc.c
  *
- * Purpose: Implement functions to calculate CRC
+ * Purpose: Implement functions to caculate CRC
  *
  * Author: Tevin Chen
  *

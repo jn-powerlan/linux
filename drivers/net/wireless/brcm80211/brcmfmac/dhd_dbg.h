@@ -55,7 +55,6 @@ do {									\
 #define BRCMF_HDRS_ON()		(brcmf_msg_level & BRCMF_HDRS_VAL)
 #define BRCMF_BYTES_ON()	(brcmf_msg_level & BRCMF_BYTES_VAL)
 #define BRCMF_GLOM_ON()		(brcmf_msg_level & BRCMF_GLOM_VAL)
-#define BRCMF_EVENT_ON()	(brcmf_msg_level & BRCMF_EVENT_VAL)
 
 #else	/* (defined DEBUG) || (defined DEBUG) */
 
@@ -66,7 +65,6 @@ do {									\
 #define BRCMF_HDRS_ON()		0
 #define BRCMF_BYTES_ON()	0
 #define BRCMF_GLOM_ON()		0
-#define BRCMF_EVENT_ON()	0
 
 #endif				/* defined(DEBUG) */
 

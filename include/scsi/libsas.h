@@ -79,8 +79,7 @@ enum phy_event {
 	PHYE_OOB_DONE         = 1,
 	PHYE_OOB_ERROR        = 2,
 	PHYE_SPINUP_HOLD      = 3, /* hot plug SATA, no COMWAKE sent */
-	PHYE_RESUME_TIMEOUT   = 4,
-	PHY_NUM_EVENTS        = 5,
+	PHY_NUM_EVENTS        = 4,
 };
 
 enum discover_event {
@@ -88,10 +87,8 @@ enum discover_event {
 	DISCE_REVALIDATE_DOMAIN = 1,
 	DISCE_PORT_GONE         = 2,
 	DISCE_PROBE		= 3,
-	DISCE_SUSPEND		= 4,
-	DISCE_RESUME		= 5,
-	DISCE_DESTRUCT		= 6,
-	DISC_NUM_EVENTS		= 7,
+	DISCE_DESTRUCT		= 4,
+	DISC_NUM_EVENTS		= 5,
 };
 
 /* ---------- Expander Devices ---------- */
@@ -131,7 +128,7 @@ struct ex_phy {
 	u8   attached_sas_addr[SAS_ADDR_SIZE];
 	u8   attached_phy_id;
 
-	int phy_change_count;
+	u8   phy_change_count;
 	enum routing_attribute routing_attr;
 	u8   virtual:1;
 
@@ -144,7 +141,7 @@ struct ex_phy {
 struct expander_device {
 	struct list_head children;
 
-	int    ex_change_count;
+	u16    ex_change_count;
 	u16    max_route_indexes;
 	u8     num_phys;
 
@@ -172,7 +169,6 @@ struct sata_device {
         enum   ata_command_set command_set;
         struct smp_resp        rps_resp; /* report_phy_sata_resp */
         u8     port_no;        /* port number, if this is a PM (Port) */
-	int    pm_result;
 
 	struct ata_port *ap;
 	struct ata_host ata_host;
@@ -186,7 +182,6 @@ struct ssp_device {
 
 enum {
 	SAS_DEV_GONE,
-	SAS_DEV_FOUND, /* device notified to lldd */
 	SAS_DEV_DESTROY,
 	SAS_DEV_EH_PENDING,
 	SAS_DEV_LU_RESET,
@@ -278,7 +273,6 @@ struct asd_sas_port {
 	enum   sas_linkrate linkrate;
 
 	struct sas_work work;
-	int suspended;
 
 /* public: */
 	int id;
@@ -327,7 +321,6 @@ struct asd_sas_phy {
 	unsigned long phy_events_pending;
 
 	int error;
-	int suspended;
 
 	struct sas_phy *phy;
 
@@ -694,9 +687,6 @@ struct sas_domain_function_template {
 
 extern int sas_register_ha(struct sas_ha_struct *);
 extern int sas_unregister_ha(struct sas_ha_struct *);
-extern void sas_prep_resume_ha(struct sas_ha_struct *sas_ha);
-extern void sas_resume_ha(struct sas_ha_struct *sas_ha);
-extern void sas_suspend_ha(struct sas_ha_struct *sas_ha);
 
 int sas_set_phy_speed(struct sas_phy *phy,
 		      struct sas_phy_linkrates *rates);

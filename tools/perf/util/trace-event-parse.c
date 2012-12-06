@@ -162,16 +162,25 @@ int trace_parse_common_pid(struct pevent *pevent, void *data)
 	return pevent_data_pid(pevent, &record);
 }
 
-unsigned long long read_size(struct event_format *event, void *ptr, int size)
+unsigned long long read_size(struct pevent *pevent, void *ptr, int size)
 {
-	return pevent_read_number(event->pevent, ptr, size);
+	return pevent_read_number(pevent, ptr, size);
 }
 
-void event_format__print(struct event_format *event,
-			 int cpu, void *data, int size)
+void print_trace_event(struct pevent *pevent, int cpu, void *data, int size)
 {
+	struct event_format *event;
 	struct pevent_record record;
 	struct trace_seq s;
+	int type;
+
+	type = trace_parse_common_type(pevent, data);
+
+	event = pevent_find_event(pevent, type);
+	if (!event) {
+		warning("ug! no event found for type %d", type);
+		return;
+	}
 
 	memset(&record, 0, sizeof(record));
 	record.cpu = cpu;
@@ -181,19 +190,6 @@ void event_format__print(struct event_format *event,
 	trace_seq_init(&s);
 	pevent_event_info(&s, event, &record);
 	trace_seq_do_printf(&s);
-}
-
-void print_trace_event(struct pevent *pevent, int cpu, void *data, int size)
-{
-	int type = trace_parse_common_type(pevent, data);
-	struct event_format *event = pevent_find_event(pevent, type);
-
-	if (!event) {
-		warning("ug! no event found for type %d", type);
-		return;
-	}
-
-	event_format__print(event, cpu, data, size);
 }
 
 void print_event(struct pevent *pevent, int cpu, void *data, int size,
@@ -221,7 +217,7 @@ void print_event(struct pevent *pevent, int cpu, void *data, int size,
 }
 
 void parse_proc_kallsyms(struct pevent *pevent,
-			 char *file, unsigned int size __maybe_unused)
+			 char *file, unsigned int size __unused)
 {
 	unsigned long long addr;
 	char *func;
@@ -229,29 +225,31 @@ void parse_proc_kallsyms(struct pevent *pevent,
 	char *next = NULL;
 	char *addr_str;
 	char *mod;
-	char *fmt;
+	char ch;
 
 	line = strtok_r(file, "\n", &next);
 	while (line) {
 		mod = NULL;
-		addr_str = strtok_r(line, " ", &fmt);
+		sscanf(line, "%as %c %as\t[%as",
+		       (float *)(void *)&addr_str, /* workaround gcc warning */
+		       &ch, (float *)(void *)&func, (float *)(void *)&mod);
 		addr = strtoull(addr_str, NULL, 16);
-		/* skip character */
-		strtok_r(NULL, " ", &fmt);
-		func = strtok_r(NULL, "\t", &fmt);
-		mod = strtok_r(NULL, "]", &fmt);
-		/* truncate the extra '[' */
+		free(addr_str);
+
+		/* truncate the extra ']' */
 		if (mod)
-			mod = mod + 1;
+			mod[strlen(mod) - 1] = 0;
 
 		pevent_register_function(pevent, func, addr, mod);
+		free(func);
+		free(mod);
 
 		line = strtok_r(NULL, "\n", &next);
 	}
 }
 
 void parse_ftrace_printk(struct pevent *pevent,
-			 char *file, unsigned int size __maybe_unused)
+			 char *file, unsigned int size __unused)
 {
 	unsigned long long addr;
 	char *printk;
@@ -291,7 +289,7 @@ struct event_format *trace_find_next_event(struct pevent *pevent,
 {
 	static int idx;
 
-	if (!pevent || !pevent->events)
+	if (!pevent->events)
 		return NULL;
 
 	if (!event) {

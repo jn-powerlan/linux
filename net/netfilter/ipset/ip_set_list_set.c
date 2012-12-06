@@ -16,12 +16,9 @@
 #include <linux/netfilter/ipset/ip_set_timeout.h>
 #include <linux/netfilter/ipset/ip_set_list.h>
 
-#define REVISION_MIN	0
-#define REVISION_MAX	0
-
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Jozsef Kadlecsik <kadlec@blackhole.kfki.hu>");
-IP_SET_MODULE_DESC("list:set", REVISION_MIN, REVISION_MAX);
+MODULE_DESCRIPTION("list:set type of IP sets");
 MODULE_ALIAS("ip_set_list:set");
 
 /* Member elements without and with timeout */
@@ -582,8 +579,8 @@ static struct ip_set_type list_set_type __read_mostly = {
 	.features	= IPSET_TYPE_NAME | IPSET_DUMP_LAST,
 	.dimension	= IPSET_DIM_ONE,
 	.family		= NFPROTO_UNSPEC,
-	.revision_min	= REVISION_MIN,
-	.revision_max	= REVISION_MAX,
+	.revision_min	= 0,
+	.revision_max	= 0,
 	.create		= list_set_create,
 	.create_policy	= {
 		[IPSET_ATTR_SIZE]	= { .type = NLA_U32 },

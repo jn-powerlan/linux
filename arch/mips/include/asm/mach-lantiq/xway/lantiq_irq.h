@@ -21,6 +21,4 @@
 
 #define MIPS_CPU_TIMER_IRQ	7
 
-#define MAX_IM			5
-
 #endif

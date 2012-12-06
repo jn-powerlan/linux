@@ -256,7 +256,7 @@ static struct samsung_keypad_platdata *samsung_keypad_parse_dt(
 	struct matrix_keymap_data *keymap_data;
 	uint32_t *keymap, num_rows = 0, num_cols = 0;
 	struct device_node *np = dev->of_node, *key_np;
-	unsigned int key_count;
+	unsigned int key_count = 0;
 
 	pdata = devm_kzalloc(dev, sizeof(*pdata), GFP_KERNEL);
 	if (!pdata) {
@@ -280,7 +280,9 @@ static struct samsung_keypad_platdata *samsung_keypad_parse_dt(
 	}
 	pdata->keymap_data = keymap_data;
 
-	key_count = of_get_child_count(np);
+	for_each_child_of_node(np, key_np)
+		key_count++;
+
 	keymap_data->keymap_size = key_count;
 	keymap = devm_kzalloc(dev, sizeof(uint32_t) * key_count, GFP_KERNEL);
 	if (!keymap) {
@@ -431,12 +433,6 @@ static int __devinit samsung_keypad_probe(struct platform_device *pdev)
 		goto err_unmap_base;
 	}
 
-	error = clk_prepare(keypad->clk);
-	if (error) {
-		dev_err(&pdev->dev, "keypad clock prepare failed\n");
-		goto err_put_clk;
-	}
-
 	keypad->input_dev = input_dev;
 	keypad->pdev = pdev;
 	keypad->row_shift = row_shift;
@@ -467,7 +463,7 @@ static int __devinit samsung_keypad_probe(struct platform_device *pdev)
 					   keypad->keycodes, input_dev);
 	if (error) {
 		dev_err(&pdev->dev, "failed to build keymap\n");
-		goto err_unprepare_clk;
+		goto err_put_clk;
 	}
 
 	input_set_capability(input_dev, EV_MSC, MSC_SCAN);
@@ -509,8 +505,6 @@ err_free_irq:
 	pm_runtime_disable(&pdev->dev);
 	device_init_wakeup(&pdev->dev, 0);
 	platform_set_drvdata(pdev, NULL);
-err_unprepare_clk:
-	clk_unprepare(keypad->clk);
 err_put_clk:
 	clk_put(keypad->clk);
 	samsung_keypad_dt_gpio_free(keypad);
@@ -539,7 +533,6 @@ static int __devexit samsung_keypad_remove(struct platform_device *pdev)
 	 */
 	free_irq(keypad->irq, keypad);
 
-	clk_unprepare(keypad->clk);
 	clk_put(keypad->clk);
 	samsung_keypad_dt_gpio_free(keypad);
 
@@ -669,6 +662,8 @@ static const struct of_device_id samsung_keypad_dt_match[] = {
 	{},
 };
 MODULE_DEVICE_TABLE(of, samsung_keypad_dt_match);
+#else
+#define samsung_keypad_dt_match NULL
 #endif
 
 static struct platform_device_id samsung_keypad_driver_ids[] = {
@@ -689,7 +684,7 @@ static struct platform_driver samsung_keypad_driver = {
 	.driver		= {
 		.name	= "samsung-keypad",
 		.owner	= THIS_MODULE,
-		.of_match_table = of_match_ptr(samsung_keypad_dt_match),
+		.of_match_table = samsung_keypad_dt_match,
 		.pm	= &samsung_keypad_pm_ops,
 	},
 	.id_table	= samsung_keypad_driver_ids,

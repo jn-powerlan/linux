@@ -19,63 +19,59 @@
 #include <linux/mmc/host.h>
 #include <linux/mmc/mmc.h>
 #include <linux/mmc/dw_mmc.h>
-#include <linux/of.h>
-
 #include "dw_mmc.h"
 
-int dw_mci_pltfm_register(struct platform_device *pdev,
-				const struct dw_mci_drv_data *drv_data)
+static int dw_mci_pltfm_probe(struct platform_device *pdev)
 {
 	struct dw_mci *host;
 	struct resource	*regs;
 	int ret;
 
-	host = devm_kzalloc(&pdev->dev, sizeof(struct dw_mci), GFP_KERNEL);
+	host = kzalloc(sizeof(struct dw_mci), GFP_KERNEL);
 	if (!host)
 		return -ENOMEM;
 
 	regs = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	if (!regs)
-		return -ENXIO;
-
-	host->irq = platform_get_irq(pdev, 0);
-	if (host->irq < 0)
-		return host->irq;
-
-	host->drv_data = drv_data;
-	host->dev = &pdev->dev;
-	host->irq_flags = 0;
-	host->pdata = pdev->dev.platform_data;
-	host->regs = devm_request_and_ioremap(&pdev->dev, regs);
-	if (!host->regs)
-		return -ENOMEM;
-
-	if (drv_data && drv_data->init) {
-		ret = drv_data->init(host);
-		if (ret)
-			return ret;
+	if (!regs) {
+		ret = -ENXIO;
+		goto err_free;
 	}
 
+	host->irq = platform_get_irq(pdev, 0);
+	if (host->irq < 0) {
+		ret = host->irq;
+		goto err_free;
+	}
+
+	host->dev = pdev->dev;
+	host->irq_flags = 0;
+	host->pdata = pdev->dev.platform_data;
+	ret = -ENOMEM;
+	host->regs = ioremap(regs->start, resource_size(regs));
+	if (!host->regs)
+		goto err_free;
 	platform_set_drvdata(pdev, host);
 	ret = dw_mci_probe(host);
+	if (ret)
+		goto err_out;
+	return ret;
+err_out:
+	iounmap(host->regs);
+err_free:
+	kfree(host);
 	return ret;
 }
-EXPORT_SYMBOL_GPL(dw_mci_pltfm_register);
 
-static int __devinit dw_mci_pltfm_probe(struct platform_device *pdev)
-{
-	return dw_mci_pltfm_register(pdev, NULL);
-}
-
-static int __devexit dw_mci_pltfm_remove(struct platform_device *pdev)
+static int __exit dw_mci_pltfm_remove(struct platform_device *pdev)
 {
 	struct dw_mci *host = platform_get_drvdata(pdev);
 
 	platform_set_drvdata(pdev, NULL);
 	dw_mci_remove(host);
+	iounmap(host->regs);
+	kfree(host);
 	return 0;
 }
-EXPORT_SYMBOL_GPL(dw_mci_pltfm_remove);
 
 #ifdef CONFIG_PM_SLEEP
 /*
@@ -109,20 +105,12 @@ static int dw_mci_pltfm_resume(struct device *dev)
 #define dw_mci_pltfm_resume	NULL
 #endif /* CONFIG_PM_SLEEP */
 
-SIMPLE_DEV_PM_OPS(dw_mci_pltfm_pmops, dw_mci_pltfm_suspend, dw_mci_pltfm_resume);
-EXPORT_SYMBOL_GPL(dw_mci_pltfm_pmops);
-
-static const struct of_device_id dw_mci_pltfm_match[] = {
-	{ .compatible = "snps,dw-mshc", },
-	{},
-};
-MODULE_DEVICE_TABLE(of, dw_mci_pltfm_match);
+static SIMPLE_DEV_PM_OPS(dw_mci_pltfm_pmops, dw_mci_pltfm_suspend, dw_mci_pltfm_resume);
 
 static struct platform_driver dw_mci_pltfm_driver = {
 	.remove		= __exit_p(dw_mci_pltfm_remove),
 	.driver		= {
 		.name		= "dw_mmc",
-		.of_match_table	= of_match_ptr(dw_mci_pltfm_match),
 		.pm		= &dw_mci_pltfm_pmops,
 	},
 };

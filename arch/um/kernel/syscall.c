@@ -3,16 +3,17 @@
  * Licensed under the GPL
  */
 
-#include <linux/file.h>
-#include <linux/fs.h>
-#include <linux/mm.h>
-#include <linux/sched.h>
-#include <linux/utsname.h>
-#include <linux/syscalls.h>
-#include <asm/current.h>
-#include <asm/mman.h>
-#include <asm/uaccess.h>
-#include <asm/unistd.h>
+#include "linux/file.h"
+#include "linux/fs.h"
+#include "linux/mm.h"
+#include "linux/sched.h"
+#include "linux/utsname.h"
+#include "linux/syscalls.h"
+#include "asm/current.h"
+#include "asm/mman.h"
+#include "asm/uaccess.h"
+#include "asm/unistd.h"
+#include "internal.h"
 
 long sys_fork(void)
 {
@@ -48,4 +49,20 @@ long old_mmap(unsigned long addr, unsigned long len,
 	err = sys_mmap_pgoff(addr, len, prot, flags, fd, offset >> PAGE_SHIFT);
  out:
 	return err;
+}
+
+int kernel_execve(const char *filename,
+		  const char *const argv[],
+		  const char *const envp[])
+{
+	mm_segment_t fs;
+	int ret;
+
+	fs = get_fs();
+	set_fs(KERNEL_DS);
+	ret = um_execve(filename, (const char __user *const __user *)argv,
+			(const char __user *const __user *) envp);
+	set_fs(fs);
+
+	return ret;
 }

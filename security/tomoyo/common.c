@@ -925,9 +925,7 @@ static bool tomoyo_manager(void)
 
 	if (!tomoyo_policy_loaded)
 		return true;
-	if (!tomoyo_manage_by_non_root &&
-	    (!uid_eq(task->cred->uid,  GLOBAL_ROOT_UID) ||
-	     !uid_eq(task->cred->euid, GLOBAL_ROOT_UID)))
+	if (!tomoyo_manage_by_non_root && (task->cred->uid || task->cred->euid))
 		return false;
 	exe = tomoyo_get_exe();
 	if (!exe)

@@ -297,14 +297,16 @@ static int bt_ti_probe(struct platform_device *pdev)
 	struct hci_dev *hdev;
 	int err;
 
-	hst = devm_kzalloc(&pdev->dev, sizeof(struct ti_st), GFP_KERNEL);
+	hst = kzalloc(sizeof(struct ti_st), GFP_KERNEL);
 	if (!hst)
 		return -ENOMEM;
 
 	/* Expose "hciX" device to user space */
 	hdev = hci_alloc_dev();
-	if (!hdev)
+	if (!hdev) {
+		kfree(hst);
 		return -ENOMEM;
+	}
 
 	BT_DBG("hdev %p", hdev);
 
@@ -319,6 +321,7 @@ static int bt_ti_probe(struct platform_device *pdev)
 	err = hci_register_dev(hdev);
 	if (err < 0) {
 		BT_ERR("Can't register HCI device error %d", err);
+		kfree(hst);
 		hci_free_dev(hdev);
 		return err;
 	}
@@ -344,6 +347,7 @@ static int bt_ti_remove(struct platform_device *pdev)
 	hci_unregister_dev(hdev);
 
 	hci_free_dev(hdev);
+	kfree(hst);
 
 	dev_set_drvdata(&pdev->dev, NULL);
 	return 0;
@@ -358,7 +362,21 @@ static struct platform_driver btwilink_driver = {
 	},
 };
 
-module_platform_driver(btwilink_driver);
+/* ------- Module Init/Exit interfaces ------ */
+static int __init btwilink_init(void)
+{
+	BT_INFO("Bluetooth Driver for TI WiLink - Version %s", VERSION);
+
+	return platform_driver_register(&btwilink_driver);
+}
+
+static void __exit btwilink_exit(void)
+{
+	platform_driver_unregister(&btwilink_driver);
+}
+
+module_init(btwilink_init);
+module_exit(btwilink_exit);
 
 /* ------ Module Info ------ */
 

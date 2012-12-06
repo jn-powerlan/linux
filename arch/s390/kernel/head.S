@@ -52,7 +52,7 @@ __HEAD
 	.long	0x02000370,0x60000050		# the channel program the PSW
 	.long	0x020003c0,0x60000050		# at location 0 is loaded.
 	.long	0x02000410,0x60000050		# Initial processing starts
-	.long	0x02000460,0x60000050		# at 0x200 = iplstart.
+	.long	0x02000460,0x60000050		# at 0xf0 = iplstart.
 	.long	0x020004b0,0x60000050
 	.long	0x02000500,0x60000050
 	.long	0x02000550,0x60000050
@@ -62,54 +62,11 @@ __HEAD
 	.long	0x02000690,0x60000050
 	.long	0x020006e0,0x20000050
 
-	.org	0x200
-#
-# subroutine to set architecture mode
-#
-.Lsetmode:
-#ifdef CONFIG_64BIT
-	mvi	__LC_AR_MODE_ID,1	# set esame flag
-	slr	%r0,%r0 		# set cpuid to zero
-	lhi	%r1,2			# mode 2 = esame (dump)
-	sigp	%r1,%r0,0x12		# switch to esame mode
-	bras	%r13,0f
-	.fill	16,4,0x0
-0:	lmh	%r0,%r15,0(%r13)	# clear high-order half of gprs
-	sam31				# switch to 31 bit addressing mode
-#else
-	mvi	__LC_AR_MODE_ID,0	# set ESA flag (mode 0)
-#endif
-	br	%r14
-
-#
-# subroutine to wait for end I/O
-#
-.Lirqwait:
-#ifdef CONFIG_64BIT
-	mvc	0x1f0(16),.Lnewpsw	# set up IO interrupt psw
-	lpsw	.Lwaitpsw
-.Lioint:
-	br	%r14
-	.align	8
-.Lnewpsw:
-	.quad	0x0000000080000000,.Lioint
-#else
-	mvc	0x78(8),.Lnewpsw	# set up IO interrupt psw
-	lpsw	.Lwaitpsw
-.Lioint:
-	br	%r14
-	.align	8
-.Lnewpsw:
-	.long	0x00080000,0x80000000+.Lioint
-#endif
-.Lwaitpsw:
-	.long	0x020a0000,0x80000000+.Lioint
-
+	.org	0xf0
 #
 # subroutine for loading cards from the reader
 #
 .Lloader:
-	la	%r4,0(%r14)
 	la	%r3,.Lorb		# r2 = address of orb into r2
 	la	%r5,.Lirb		# r4 = address of irb
 	la	%r6,.Lccws
@@ -126,7 +83,9 @@ __HEAD
 	ssch	0(%r3)			# load chunk of 1600 bytes
 	bnz	.Llderr
 .Lwait4irq:
-	bas	%r14,.Lirqwait
+	mvc	0x78(8),.Lnewpsw	# set up IO interrupt psw
+	lpsw	.Lwaitpsw
+.Lioint:
 	c	%r1,0xb8		# compare subchannel number
 	bne	.Lwait4irq
 	tsch	0(%r5)
@@ -145,7 +104,7 @@ __HEAD
 	sr	%r0,%r3 		# #ccws*80-residual=#bytes read
 	ar	%r2,%r0
 
-	br	%r4			# r2 contains the total size
+	br	%r14			# r2 contains the total size
 
 .Lcont:
 	ahi	%r2,0x640		# add 0x640 to total size
@@ -169,6 +128,10 @@ __HEAD
 .Lloadp:.long	0,0
 	.align	8
 .Lcrash:.long	0x000a0000,0x00000000
+.Lnewpsw:
+	.long	0x00080000,0x80000000+.Lioint
+.Lwaitpsw:
+	.long	0x020a0000,0x80000000+.Lioint
 
 	.align	8
 .Lccws: .rept	19
@@ -177,7 +140,6 @@ __HEAD
 	.long	0x02200050,0x00000000
 
 iplstart:
-	bas	%r14,.Lsetmode		# Immediately switch to 64 bit mode
 	lh	%r1,0xb8		# test if subchannel number
 	bct	%r1,.Lnoload		#  is valid
 	l	%r1,0xb8		# load ipl subchannel number
@@ -247,8 +209,8 @@ iplstart:
 #
 # reset files in VM reader
 #
-	stidp	.Lcpuid			# store cpuid
-	tm	.Lcpuid,0xff		# running VM ?
+	stidp	__LC_SAVE_AREA_SYNC	# store cpuid
+	tm	__LC_SAVE_AREA_SYNC,0xff# running VM ?
 	bno	.Lnoreset
 	la	%r2,.Lreset
 	lhi	%r3,26
@@ -260,13 +222,22 @@ iplstart:
 	tm	31(%r5),0xff		# bits is set in the schib
 	bz	.Lnoreset
 .Lwaitforirq:
-	bas	%r14,.Lirqwait		# wait for IO interrupt
+	mvc	0x78(8),.Lrdrnewpsw	# set up IO interrupt psw
+.Lwaitrdrirq:
+	lpsw	.Lrdrwaitpsw
+.Lrdrint:
 	c	%r1,0xb8		# compare subchannel number
-	bne	.Lwaitforirq
+	bne	.Lwaitrdrirq
 	la	%r5,.Lirb
 	tsch	0(%r5)
 .Lnoreset:
 	b	.Lnoload
+
+	.align	8
+.Lrdrnewpsw:
+	.long	0x00080000,0x80000000+.Lrdrint
+.Lrdrwaitpsw:
+	.long	0x020a0000,0x80000000+.Lrdrint
 
 #
 # everything loaded, go for it
@@ -283,8 +254,6 @@ iplstart:
 	.byte	0xc8,0xd6,0xd3,0xc4	# "change rdr all keep nohold"
 .L_eof: .long	0xc5d6c600	 /* C'EOF' */
 .L_hdr: .long	0xc8c4d900	 /* C'HDR' */
-	.align	8
-.Lcpuid:.fill	8,1,0
 
 #
 # SALIPL loader support. Based on a patch by Rob van der Heij.
@@ -294,7 +263,6 @@ iplstart:
 	.org	0x800
 ENTRY(start)
 	stm	%r0,%r15,0x07b0		# store registers
-	bas	%r14,.Lsetmode		# Immediately switch to 64 bit mode
 	basr	%r12,%r0
 .base:
 	l	%r11,.parm
@@ -375,18 +343,6 @@ ENTRY(startup)
 ENTRY(startup_kdump)
 	j	.Lep_startup_kdump
 .Lep_startup_normal:
-#ifdef CONFIG_64BIT
-	mvi	__LC_AR_MODE_ID,1	# set esame flag
-	slr	%r0,%r0 		# set cpuid to zero
-	lhi	%r1,2			# mode 2 = esame (dump)
-	sigp	%r1,%r0,0x12		# switch to esame mode
-	bras	%r13,0f
-	.fill	16,4,0x0
-0:	lmh	%r0,%r15,0(%r13)	# clear high-order half of gprs
-	sam31				# switch to 31 bit addressing mode
-#else
-	mvi	__LC_AR_MODE_ID,0	# set ESA flag (mode 0)
-#endif
 	basr	%r13,0			# get base
 .LPG0:
 	xc	0x200(256),0x200	# partially clear lowcore
@@ -454,17 +410,22 @@ ENTRY(startup_kdump)
 #endif
 
 #ifdef CONFIG_64BIT
-	/* Continue with 64bit startup code in head64.S */
+	mvi	__LC_AR_MODE_ID,1	# set esame flag
+	slr	%r0,%r0 		# set cpuid to zero
+	lhi	%r1,2			# mode 2 = esame (dump)
+	sigp	%r1,%r0,0x12		# switch to esame mode
 	sam64				# switch to 64 bit mode
+	larl	%r13,4f
+	lmh	%r0,%r15,0(%r13)	# clear high-order half
 	jg	startup_continue
+4:	.fill	16,4,0x0
 #else
-	/* Continue with 31bit startup code in head31.S */
+	mvi	__LC_AR_MODE_ID,0	# set ESA flag (mode 0)
 	l	%r13,4f-.LPG0(%r13)
 	b	0(%r13)
 	.align	8
 4:	.long	startup_continue
 #endif
-
 	.align	8
 5:	.long	0x7fffffff,0xffffffff
 

@@ -29,7 +29,8 @@
 
 #include <asm/assembler.h>
 
-#include "soc.h"
+#include <mach/hardware.h>
+
 #include "iomap.h"
 #include "sdrc.h"
 #include "cm2xxx_3xxx.h"

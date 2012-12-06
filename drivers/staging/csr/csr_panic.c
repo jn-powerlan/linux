@@ -9,6 +9,7 @@
 *****************************************************************************/
 
 #include <linux/kernel.h>
+#include <linux/version.h>
 #include <linux/module.h>
 
 #include "csr_panic.h"

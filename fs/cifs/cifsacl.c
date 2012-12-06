@@ -167,17 +167,17 @@ static struct shrinker cifs_shrinker = {
 };
 
 static int
-cifs_idmap_key_instantiate(struct key *key, struct key_preparsed_payload *prep)
+cifs_idmap_key_instantiate(struct key *key, const void *data, size_t datalen)
 {
 	char *payload;
 
-	payload = kmalloc(prep->datalen, GFP_KERNEL);
+	payload = kmalloc(datalen, GFP_KERNEL);
 	if (!payload)
 		return -ENOMEM;
 
-	memcpy(payload, prep->data, prep->datalen);
+	memcpy(payload, data, datalen);
 	key->payload.data = payload;
-	key->datalen = prep->datalen;
+	key->datalen = datalen;
 	return 0;
 }
 
@@ -1213,7 +1213,7 @@ struct cifs_ntsd *get_cifs_acl(struct cifs_sb_info *cifs_sb,
 	if (!open_file)
 		return get_cifs_acl_by_path(cifs_sb, path, pacllen);
 
-	pntsd = get_cifs_acl_by_fid(cifs_sb, open_file->fid.netfid, pacllen);
+	pntsd = get_cifs_acl_by_fid(cifs_sb, open_file->netfid, pacllen);
 	cifsFileInfo_put(open_file);
 	return pntsd;
 }

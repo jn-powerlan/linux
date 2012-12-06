@@ -629,7 +629,7 @@ truncate_pat_collision(struct resource *root, struct resource *new)
 static void
 lba_fixup_bus(struct pci_bus *bus)
 {
-	struct pci_dev *dev;
+	struct list_head *ln;
 #ifdef FBB_SUPPORT
 	u16 status;
 #endif
@@ -710,8 +710,9 @@ lba_fixup_bus(struct pci_bus *bus)
 
 	}
 
-	list_for_each_entry(dev, &bus->devices, bus_list) {
+	list_for_each(ln, &bus->devices) {
 		int i;
+		struct pci_dev *dev = pci_dev_b(ln);
 
 		DBG("lba_fixup_bus() %s\n", pci_name(dev));
 
@@ -769,7 +770,7 @@ lba_fixup_bus(struct pci_bus *bus)
 	}
 
 	/* Lastly enable FBB/PERR/SERR on all devices too */
-	list_for_each_entry(dev, &bus->devices, bus_list) {
+	list_for_each(ln, &bus->devices) {
 		(void) pci_read_config_word(dev, PCI_COMMAND, &status);
 		status |= PCI_COMMAND_PARITY | PCI_COMMAND_SERR | fbb_enable;
 		(void) pci_write_config_word(dev, PCI_COMMAND, status);

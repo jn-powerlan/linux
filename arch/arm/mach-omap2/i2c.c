@@ -19,6 +19,7 @@
  *
  */
 
+#include <plat/cpu.h>
 #include <plat/i2c.h>
 #include "common.h"
 #include <plat/omap_hwmod.h>

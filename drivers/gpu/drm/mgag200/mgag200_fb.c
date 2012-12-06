@@ -11,8 +11,9 @@
  *          Dave Airlie
  */
 #include <linux/module.h>
-#include <drm/drmP.h>
-#include <drm/drm_fb_helper.h>
+#include "drmP.h"
+#include "drm.h"
+#include "drm_fb_helper.h"
 
 #include <linux/fb.h>
 

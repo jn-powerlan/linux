@@ -15,7 +15,8 @@
 #ifndef _MDP_HW_H_
 #define _MDP_HW_H_
 
-#include <linux/platform_data/video-msm_fb.h>
+#include <mach/msm_iomap.h>
+#include <mach/msm_fb.h>
 
 struct mdp_info {
 	struct mdp_device mdp_dev;

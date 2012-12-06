@@ -17,14 +17,9 @@ enum pnv_phb_model {
 };
 
 #define PNV_PCI_DIAG_BUF_SIZE	4096
-#define PNV_IODA_PE_DEV		(1 << 0)	/* PE has single PCI device	*/
-#define PNV_IODA_PE_BUS		(1 << 1)	/* PE has primary PCI bus	*/
-#define PNV_IODA_PE_BUS_ALL	(1 << 2)	/* PE has subordinate buses	*/
 
 /* Data associated with a PE, including IOMMU tracking etc.. */
 struct pnv_ioda_pe {
-	unsigned long		flags;
-
 	/* A PE can be associated with a single device or an
 	 * entire bus (& children). In the former case, pdev
 	 * is populated, in the later case, pbus is.
@@ -45,6 +40,11 @@ struct pnv_ioda_pe {
 	 */
 	unsigned int		dma_weight;
 
+	/* This is a PCI-E -> PCI-X bridge, this points to the
+	 * corresponding bus PE
+	 */
+	struct pnv_ioda_pe	*bus_pe;
+
 	/* "Base" iommu table, ie, 4K TCEs, 32-bit DMA */
 	int			tce32_seg;
 	int			tce32_segcount;
@@ -59,8 +59,7 @@ struct pnv_ioda_pe {
 	int			mve_number;
 
 	/* Link in list of PE#s */
-	struct list_head	dma_link;
-	struct list_head	list;
+	struct list_head	link;
 };
 
 struct pnv_phb {
@@ -69,7 +68,6 @@ struct pnv_phb {
 	enum pnv_phb_model	model;
 	u64			opal_id;
 	void __iomem		*regs;
-	int			initialized;
 	spinlock_t		lock;
 
 #ifdef CONFIG_PCI_MSI
@@ -109,11 +107,6 @@ struct pnv_phb {
 			unsigned int		*io_segmap;
 			struct pnv_ioda_pe	*pe_array;
 
-			/* Sorted list of used PE's based
-			 * on the sequence of creation
-			 */
-			struct list_head	pe_list;
-
 			/* Reverse map of PEs, will have to extend if
 			 * we are to support more than 256 PEs, indexed
 			 * bus { bus, devfn }
@@ -132,7 +125,7 @@ struct pnv_phb {
 			/* Sorted list of used PE's, sorted at
 			 * boot for resource allocation purposes
 			 */
-			struct list_head	pe_dma_list;
+			struct list_head	pe_list;
 		} ioda;
 	};
 

@@ -54,16 +54,14 @@ static DEFINE_MUTEX(clocks_mutex);
 static struct clk *mpc5121_clk_get(struct device *dev, const char *id)
 {
 	struct clk *p, *clk = ERR_PTR(-ENOENT);
-	int dev_match;
-	int id_match;
+	int dev_match = 0;
+	int id_match = 0;
 
 	if (dev == NULL || id == NULL)
 		return clk;
 
 	mutex_lock(&clocks_mutex);
 	list_for_each_entry(p, &clocks, node) {
-		dev_match = id_match = 0;
-
 		if (dev == p->dev)
 			dev_match++;
 		if (strcmp(id, p->name) == 0)

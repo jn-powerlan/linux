@@ -25,7 +25,6 @@
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
 #include <mach/orion5x.h>
-#include <plat/orion-gpio.h>
 #include "common.h"
 #include "mpp.h"
 

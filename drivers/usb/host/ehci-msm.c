@@ -133,7 +133,7 @@ static int ehci_msm_probe(struct platform_device *pdev)
 
 	hcd->rsrc_start = res->start;
 	hcd->rsrc_len = resource_size(res);
-	hcd->regs = devm_ioremap(&pdev->dev, hcd->rsrc_start, hcd->rsrc_len);
+	hcd->regs = ioremap(hcd->rsrc_start, hcd->rsrc_len);
 	if (!hcd->regs) {
 		dev_err(&pdev->dev, "ioremap failed\n");
 		ret = -ENOMEM;
@@ -145,17 +145,17 @@ static int ehci_msm_probe(struct platform_device *pdev)
 	 * powering up VBUS, mapping of registers address space and power
 	 * management.
 	 */
-	phy = devm_usb_get_phy(&pdev->dev, USB_PHY_TYPE_USB2);
+	phy = usb_get_phy(USB_PHY_TYPE_USB2);
 	if (IS_ERR_OR_NULL(phy)) {
 		dev_err(&pdev->dev, "unable to find transceiver\n");
 		ret = -ENODEV;
-		goto put_hcd;
+		goto unmap;
 	}
 
 	ret = otg_set_host(phy->otg, &hcd->self);
 	if (ret < 0) {
 		dev_err(&pdev->dev, "unable to register with transceiver\n");
-		goto put_hcd;
+		goto put_transceiver;
 	}
 
 	device_init_wakeup(&pdev->dev, 1);
@@ -168,6 +168,10 @@ static int ehci_msm_probe(struct platform_device *pdev)
 
 	return 0;
 
+put_transceiver:
+	usb_put_phy(phy);
+unmap:
+	iounmap(hcd->regs);
 put_hcd:
 	usb_put_hcd(hcd);
 
@@ -183,6 +187,7 @@ static int __devexit ehci_msm_remove(struct platform_device *pdev)
 	pm_runtime_set_suspended(&pdev->dev);
 
 	otg_set_host(phy->otg, NULL);
+	usb_put_phy(phy);
 
 	usb_put_hcd(hcd);
 

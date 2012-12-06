@@ -18,7 +18,7 @@
  *
  * File: wroute.c
  *
- * Purpose: handle WMAC frame relay & filtering
+ * Purpose: handle WMAC frame relay & filterring
  *
  * Author: Lyndon Chen
  *

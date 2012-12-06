@@ -21,6 +21,14 @@ static int r8a7740_pd_a4s_suspend(void)
 	return -EBUSY;
 }
 
+struct rmobile_pm_domain r8a7740_pd_a4s = {
+	.genpd.name	= "A4S",
+	.bit_shift	= 10,
+	.gov		= &pm_domain_always_on_gov,
+	.no_debug	= true,
+	.suspend	= r8a7740_pd_a4s_suspend,
+};
+
 static int r8a7740_pd_a3sp_suspend(void)
 {
 	/*
@@ -30,31 +38,17 @@ static int r8a7740_pd_a3sp_suspend(void)
 	return console_suspend_enabled ? 0 : -EBUSY;
 }
 
-static struct rmobile_pm_domain r8a7740_pm_domains[] = {
-	{
-		.genpd.name	= "A4S",
-		.bit_shift	= 10,
-		.gov		= &pm_domain_always_on_gov,
-		.no_debug	= true,
-		.suspend	= r8a7740_pd_a4s_suspend,
-	},
-	{
-		.genpd.name	= "A3SP",
-		.bit_shift	= 11,
-		.gov		= &pm_domain_always_on_gov,
-		.no_debug	= true,
-		.suspend	= r8a7740_pd_a3sp_suspend,
-	},
-	{
-		.genpd.name	= "A4LC",
-		.bit_shift	= 1,
-	},
+struct rmobile_pm_domain r8a7740_pd_a3sp = {
+	.genpd.name	= "A3SP",
+	.bit_shift	= 11,
+	.gov		= &pm_domain_always_on_gov,
+	.no_debug	= true,
+	.suspend	= r8a7740_pd_a3sp_suspend,
 };
 
-void __init r8a7740_init_pm_domains(void)
-{
-	rmobile_init_domains(r8a7740_pm_domains, ARRAY_SIZE(r8a7740_pm_domains));
-	pm_genpd_add_subdomain_names("A4S", "A3SP");
-}
+struct rmobile_pm_domain r8a7740_pd_a4lc = {
+	.genpd.name	= "A4LC",
+	.bit_shift	= 1,
+};
 
 #endif /* CONFIG_PM */

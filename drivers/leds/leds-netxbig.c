@@ -28,7 +28,7 @@
 #include <linux/platform_device.h>
 #include <linux/gpio.h>
 #include <linux/leds.h>
-#include <linux/platform_data/leds-kirkwood-netxbig.h>
+#include <mach/leds-netxbig.h>
 
 /*
  * GPIO extension bus.

@@ -35,7 +35,7 @@
 bool enable_hs;
 
 #define MGMT_VERSION	1
-#define MGMT_REVISION	2
+#define MGMT_REVISION	1
 
 static const u16 mgmt_commands[] = {
 	MGMT_OP_READ_INDEX_LIST,
@@ -99,7 +99,6 @@ static const u16 mgmt_events[] = {
 	MGMT_EV_DEVICE_BLOCKED,
 	MGMT_EV_DEVICE_UNBLOCKED,
 	MGMT_EV_DEVICE_UNPAIRED,
-	MGMT_EV_PASSKEY_NOTIFY,
 };
 
 /*
@@ -193,11 +192,6 @@ static u8 mgmt_status_table[] = {
 	MGMT_STATUS_CONNECT_FAILED,	/* Connection Establishment Failed */
 	MGMT_STATUS_CONNECT_FAILED,	/* MAC Connection Failed */
 };
-
-bool mgmt_valid_hdev(struct hci_dev *hdev)
-{
-	return hdev->dev_type == HCI_BREDR;
-}
 
 static u8 mgmt_status(u8 hci_status)
 {
@@ -323,6 +317,7 @@ static int read_index_list(struct sock *sk, struct hci_dev *hdev, void *data,
 			   u16 data_len)
 {
 	struct mgmt_rp_read_index_list *rp;
+	struct list_head *p;
 	struct hci_dev *d;
 	size_t rp_len;
 	u16 count;
@@ -333,10 +328,7 @@ static int read_index_list(struct sock *sk, struct hci_dev *hdev, void *data,
 	read_lock(&hci_dev_list_lock);
 
 	count = 0;
-	list_for_each_entry(d, &hci_dev_list, list) {
-		if (!mgmt_valid_hdev(d))
-			continue;
-
+	list_for_each(p, &hci_dev_list) {
 		count++;
 	}
 
@@ -350,9 +342,6 @@ static int read_index_list(struct sock *sk, struct hci_dev *hdev, void *data,
 	count = 0;
 	list_for_each_entry(d, &hci_dev_list, list) {
 		if (test_bit(HCI_SETUP, &d->dev_flags))
-			continue;
-
-		if (!mgmt_valid_hdev(d))
 			continue;
 
 		rp->index[count++] = cpu_to_le16(d->id);
@@ -382,10 +371,10 @@ static u32 get_supported_settings(struct hci_dev *hdev)
 	settings |= MGMT_SETTING_DISCOVERABLE;
 	settings |= MGMT_SETTING_PAIRABLE;
 
-	if (lmp_ssp_capable(hdev))
+	if (hdev->features[6] & LMP_SIMPLE_PAIR)
 		settings |= MGMT_SETTING_SSP;
 
-	if (lmp_bredr_capable(hdev)) {
+	if (!(hdev->features[4] & LMP_NO_BREDR)) {
 		settings |= MGMT_SETTING_BREDR;
 		settings |= MGMT_SETTING_LINK_SECURITY;
 	}
@@ -393,7 +382,7 @@ static u32 get_supported_settings(struct hci_dev *hdev)
 	if (enable_hs)
 		settings |= MGMT_SETTING_HS;
 
-	if (lmp_le_capable(hdev))
+	if (hdev->features[4] & LMP_LE)
 		settings |= MGMT_SETTING_LE;
 
 	return settings;
@@ -415,7 +404,7 @@ static u32 get_current_settings(struct hci_dev *hdev)
 	if (test_bit(HCI_PAIRABLE, &hdev->dev_flags))
 		settings |= MGMT_SETTING_PAIRABLE;
 
-	if (lmp_bredr_capable(hdev))
+	if (!(hdev->features[4] & LMP_NO_BREDR))
 		settings |= MGMT_SETTING_BREDR;
 
 	if (test_bit(HCI_LE_ENABLED, &hdev->dev_flags))
@@ -1123,7 +1112,7 @@ static int set_ssp(struct sock *sk, struct hci_dev *hdev, void *data, u16 len)
 
 	hci_dev_lock(hdev);
 
-	if (!lmp_ssp_capable(hdev)) {
+	if (!(hdev->features[6] & LMP_SIMPLE_PAIR)) {
 		err = cmd_status(sk, hdev->id, MGMT_OP_SET_SSP,
 				 MGMT_STATUS_NOT_SUPPORTED);
 		goto failed;
@@ -1207,7 +1196,7 @@ static int set_le(struct sock *sk, struct hci_dev *hdev, void *data, u16 len)
 
 	hci_dev_lock(hdev);
 
-	if (!lmp_le_capable(hdev)) {
+	if (!(hdev->features[4] & LMP_LE)) {
 		err = cmd_status(sk, hdev->id, MGMT_OP_SET_LE,
 				 MGMT_STATUS_NOT_SUPPORTED);
 		goto unlock;
@@ -1367,7 +1356,6 @@ static int remove_uuid(struct sock *sk, struct hci_dev *hdev, void *data,
 			continue;
 
 		list_del(&match->list);
-		kfree(match);
 		found++;
 	}
 
@@ -2204,7 +2192,7 @@ static int read_local_oob_data(struct sock *sk, struct hci_dev *hdev,
 		goto unlock;
 	}
 
-	if (!lmp_ssp_capable(hdev)) {
+	if (!(hdev->features[6] & LMP_SIMPLE_PAIR)) {
 		err = cmd_status(sk, hdev->id, MGMT_OP_READ_LOCAL_OOB_DATA,
 				 MGMT_STATUS_NOT_SUPPORTED);
 		goto unlock;
@@ -2833,18 +2821,12 @@ static void cmd_status_rsp(struct pending_cmd *cmd, void *data)
 
 int mgmt_index_added(struct hci_dev *hdev)
 {
-	if (!mgmt_valid_hdev(hdev))
-		return -ENOTSUPP;
-
 	return mgmt_event(MGMT_EV_INDEX_ADDED, hdev, NULL, 0, NULL);
 }
 
 int mgmt_index_removed(struct hci_dev *hdev)
 {
 	u8 status = MGMT_STATUS_INVALID_INDEX;
-
-	if (!mgmt_valid_hdev(hdev))
-		return -ENOTSUPP;
 
 	mgmt_pending_foreach(0, hdev, cmd_status_rsp, &status);
 
@@ -3096,17 +3078,16 @@ static void unpair_device_rsp(struct pending_cmd *cmd, void *data)
 }
 
 int mgmt_device_disconnected(struct hci_dev *hdev, bdaddr_t *bdaddr,
-			     u8 link_type, u8 addr_type, u8 reason)
+			     u8 link_type, u8 addr_type)
 {
-	struct mgmt_ev_device_disconnected ev;
+	struct mgmt_addr_info ev;
 	struct sock *sk = NULL;
 	int err;
 
 	mgmt_pending_foreach(MGMT_OP_DISCONNECT, hdev, disconnect_rsp, &sk);
 
-	bacpy(&ev.addr.bdaddr, bdaddr);
-	ev.addr.type = link_to_bdaddr(link_type, addr_type);
-	ev.reason = reason;
+	bacpy(&ev.bdaddr, bdaddr);
+	ev.type = link_to_bdaddr(link_type, addr_type);
 
 	err = mgmt_event(MGMT_EV_DEVICE_DISCONNECTED, hdev, &ev, sizeof(ev),
 			 sk);
@@ -3293,22 +3274,6 @@ int mgmt_user_passkey_neg_reply_complete(struct hci_dev *hdev, bdaddr_t *bdaddr,
 	return user_pairing_resp_complete(hdev, bdaddr, link_type, addr_type,
 					  status,
 					  MGMT_OP_USER_PASSKEY_NEG_REPLY);
-}
-
-int mgmt_user_passkey_notify(struct hci_dev *hdev, bdaddr_t *bdaddr,
-			     u8 link_type, u8 addr_type, u32 passkey,
-			     u8 entered)
-{
-	struct mgmt_ev_passkey_notify ev;
-
-	BT_DBG("%s", hdev->name);
-
-	bacpy(&ev.addr.bdaddr, bdaddr);
-	ev.addr.type = link_to_bdaddr(link_type, addr_type);
-	ev.passkey = __cpu_to_le32(passkey);
-	ev.entered = entered;
-
-	return mgmt_event(MGMT_EV_PASSKEY_NOTIFY, hdev, &ev, sizeof(ev), NULL);
 }
 
 int mgmt_auth_failed(struct hci_dev *hdev, bdaddr_t *bdaddr, u8 link_type,

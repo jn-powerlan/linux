@@ -15,6 +15,22 @@
 #include "util/strlist.h"
 #include "util/symbol.h"
 
+static char const *add_name_list_str, *remove_name_list_str;
+
+static const char * const buildid_cache_usage[] = {
+	"perf buildid-cache [<options>]",
+	NULL
+};
+
+static const struct option buildid_cache_options[] = {
+	OPT_STRING('a', "add", &add_name_list_str,
+		   "file list", "file(s) to add"),
+	OPT_STRING('r', "remove", &remove_name_list_str, "file list",
+		    "file(s) to remove"),
+	OPT_INCR('v', "verbose", &verbose, "be more verbose"),
+	OPT_END()
+};
+
 static int build_id_cache__add_file(const char *filename, const char *debugdir)
 {
 	char sbuild_id[BUILD_ID_SIZE * 2 + 1];
@@ -27,16 +43,15 @@ static int build_id_cache__add_file(const char *filename, const char *debugdir)
 	}
 
 	build_id__sprintf(build_id, sizeof(build_id), sbuild_id);
-	err = build_id_cache__add_s(sbuild_id, debugdir, filename,
-				    false, false);
+	err = build_id_cache__add_s(sbuild_id, debugdir, filename, false);
 	if (verbose)
 		pr_info("Adding %s %s: %s\n", sbuild_id, filename,
 			err ? "FAIL" : "Ok");
 	return err;
 }
 
-static int build_id_cache__remove_file(const char *filename,
-				       const char *debugdir)
+static int build_id_cache__remove_file(const char *filename __used,
+				       const char *debugdir __used)
 {
 	u8 build_id[BUILD_ID_SIZE];
 	char sbuild_id[BUILD_ID_SIZE * 2 + 1];
@@ -57,34 +72,11 @@ static int build_id_cache__remove_file(const char *filename,
 	return err;
 }
 
-int cmd_buildid_cache(int argc, const char **argv,
-		      const char *prefix __maybe_unused)
+static int __cmd_buildid_cache(void)
 {
 	struct strlist *list;
 	struct str_node *pos;
 	char debugdir[PATH_MAX];
-	char const *add_name_list_str = NULL,
-		   *remove_name_list_str = NULL;
-	const struct option buildid_cache_options[] = {
-	OPT_STRING('a', "add", &add_name_list_str,
-		   "file list", "file(s) to add"),
-	OPT_STRING('r', "remove", &remove_name_list_str, "file list",
-		    "file(s) to remove"),
-	OPT_INCR('v', "verbose", &verbose, "be more verbose"),
-	OPT_END()
-	};
-	const char * const buildid_cache_usage[] = {
-		"perf buildid-cache [<options>]",
-		NULL
-	};
-
-	argc = parse_options(argc, argv, buildid_cache_options,
-			     buildid_cache_usage, 0);
-
-	if (symbol__init() < 0)
-		return -1;
-
-	setup_pager();
 
 	snprintf(debugdir, sizeof(debugdir), "%s", buildid_dir);
 
@@ -125,4 +117,16 @@ int cmd_buildid_cache(int argc, const char **argv,
 	}
 
 	return 0;
+}
+
+int cmd_buildid_cache(int argc, const char **argv, const char *prefix __used)
+{
+	argc = parse_options(argc, argv, buildid_cache_options,
+			     buildid_cache_usage, 0);
+
+	if (symbol__init() < 0)
+		return -1;
+
+	setup_pager();
+	return __cmd_buildid_cache();
 }

@@ -358,7 +358,7 @@ static int sta529_resume(struct snd_soc_codec *codec)
 	return 0;
 }
 
-static const struct snd_soc_codec_driver sta529_codec_driver = {
+struct snd_soc_codec_driver sta529_codec_driver = {
 	.probe = sta529_probe,
 	.remove = sta529_remove,
 	.set_bias_level = sta529_set_bias_level,

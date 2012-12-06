@@ -26,7 +26,7 @@
  * Authors: Dave Airlie <airlied@redhat.com>
  */
 
-#include <drm/drmP.h>
+#include "drmP.h"
 #include "ast_drv.h"
 
 #include "ast_dram_tables.h"

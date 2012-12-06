@@ -872,7 +872,7 @@ static struct pci_driver oxygen_driver = {
 	.id_table = oxygen_ids,
 	.probe = generic_oxygen_probe,
 	.remove = __devexit_p(oxygen_pci_remove),
-#ifdef CONFIG_PM_SLEEP
+#ifdef CONFIG_PM
 	.driver = {
 		.pm = &oxygen_pci_pm,
 	},

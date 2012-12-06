@@ -862,10 +862,12 @@ static int amc6821_probe(
 	struct amc6821_data *data;
 	int err;
 
-	data = devm_kzalloc(&client->dev, sizeof(struct amc6821_data),
-			    GFP_KERNEL);
-	if (!data)
+	data = kzalloc(sizeof(struct amc6821_data), GFP_KERNEL);
+	if (!data) {
+		dev_err(&client->dev, "out of memory.\n");
 		return -ENOMEM;
+	}
+
 
 	i2c_set_clientdata(client, data);
 	mutex_init(&data->update_lock);
@@ -875,11 +877,11 @@ static int amc6821_probe(
 	 */
 	err = amc6821_init_client(client);
 	if (err)
-		return err;
+		goto err_free;
 
 	err = sysfs_create_group(&client->dev.kobj, &amc6821_attr_grp);
 	if (err)
-		return err;
+		goto err_free;
 
 	data->hwmon_dev = hwmon_device_register(&client->dev);
 	if (!IS_ERR(data->hwmon_dev))
@@ -888,6 +890,8 @@ static int amc6821_probe(
 	err = PTR_ERR(data->hwmon_dev);
 	dev_err(&client->dev, "error registering hwmon device.\n");
 	sysfs_remove_group(&client->dev.kobj, &amc6821_attr_grp);
+err_free:
+	kfree(data);
 	return err;
 }
 
@@ -897,6 +901,8 @@ static int amc6821_remove(struct i2c_client *client)
 
 	hwmon_device_unregister(data->hwmon_dev);
 	sysfs_remove_group(&client->dev.kobj, &amc6821_attr_grp);
+
+	kfree(data);
 
 	return 0;
 }

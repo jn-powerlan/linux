@@ -206,11 +206,6 @@ static int init_inodecache(void)
 
 static void destroy_inodecache(void)
 {
-	/*
-	 * Make sure all delayed rcu free inodes are flushed before we
-	 * destroy cache.
-	 */
-	rcu_barrier();
 	kmem_cache_destroy(ext2_inode_cachep);
 }
 
@@ -469,7 +464,7 @@ static int parse_options(char *options, struct super_block *sb)
 			uid = make_kuid(current_user_ns(), option);
 			if (!uid_valid(uid)) {
 				ext2_msg(sb, KERN_ERR, "Invalid uid value %d", option);
-				return 0;
+				return -1;
 
 			}
 			sbi->s_resuid = uid;
@@ -480,7 +475,7 @@ static int parse_options(char *options, struct super_block *sb)
 			gid = make_kgid(current_user_ns(), option);
 			if (!gid_valid(gid)) {
 				ext2_msg(sb, KERN_ERR, "Invalid gid value %d", option);
-				return 0;
+				return -1;
 			}
 			sbi->s_resgid = gid;
 			break;

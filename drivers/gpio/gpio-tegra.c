@@ -30,6 +30,9 @@
 
 #include <asm/mach/irq.h>
 
+#include <mach/iomap.h>
+#include <mach/suspend.h>
+
 #define GPIO_BANK(x)		((x) >> 5)
 #define GPIO_PORT(x)		(((x) >> 3) & 0x3)
 #define GPIO_BIT(x)		((x) & 0x7)

@@ -231,7 +231,7 @@ WPA_ParseRSN(
  * Parameters:
  *  In:
  *      byCmd    - Search type
- *      byEncrypt- Encrypt Type
+ *      byEncrypt- Encrcypt Type
  *      pBSSList - BSS list
  *  Out:
  *      none

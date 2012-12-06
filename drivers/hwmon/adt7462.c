@@ -26,6 +26,7 @@
 #include <linux/hwmon-sysfs.h>
 #include <linux/err.h>
 #include <linux/mutex.h>
+#include <linux/delay.h>
 #include <linux/log2.h>
 #include <linux/slab.h>
 
@@ -1930,10 +1931,11 @@ static int adt7462_probe(struct i2c_client *client,
 	struct adt7462_data *data;
 	int err;
 
-	data = devm_kzalloc(&client->dev, sizeof(struct adt7462_data),
-			    GFP_KERNEL);
-	if (!data)
-		return -ENOMEM;
+	data = kzalloc(sizeof(struct adt7462_data), GFP_KERNEL);
+	if (!data) {
+		err = -ENOMEM;
+		goto exit;
+	}
 
 	i2c_set_clientdata(client, data);
 	mutex_init(&data->lock);
@@ -1944,7 +1946,7 @@ static int adt7462_probe(struct i2c_client *client,
 	data->attrs.attrs = adt7462_attr;
 	err = sysfs_create_group(&client->dev.kobj, &data->attrs);
 	if (err)
-		return err;
+		goto exit_free;
 
 	data->hwmon_dev = hwmon_device_register(&client->dev);
 	if (IS_ERR(data->hwmon_dev)) {
@@ -1956,6 +1958,9 @@ static int adt7462_probe(struct i2c_client *client,
 
 exit_remove:
 	sysfs_remove_group(&client->dev.kobj, &data->attrs);
+exit_free:
+	kfree(data);
+exit:
 	return err;
 }
 
@@ -1965,6 +1970,7 @@ static int adt7462_remove(struct i2c_client *client)
 
 	hwmon_device_unregister(data->hwmon_dev);
 	sysfs_remove_group(&client->dev.kobj, &data->attrs);
+	kfree(data);
 	return 0;
 }
 

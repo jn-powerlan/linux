@@ -205,8 +205,7 @@ int exynos_mipi_dsi_register_lcd_device(struct mipi_dsim_lcd_device *lcd_dev)
 	return 0;
 }
 
-static struct mipi_dsim_ddi *exynos_mipi_dsi_find_lcd_device(
-					struct mipi_dsim_lcd_driver *lcd_drv)
+struct mipi_dsim_ddi *exynos_mipi_dsi_find_lcd_device(struct mipi_dsim_lcd_driver *lcd_drv)
 {
 	struct mipi_dsim_ddi *dsim_ddi, *next;
 	struct mipi_dsim_lcd_device *lcd_dev;
@@ -266,8 +265,7 @@ int exynos_mipi_dsi_register_lcd_driver(struct mipi_dsim_lcd_driver *lcd_drv)
 
 }
 
-static struct mipi_dsim_ddi *exynos_mipi_dsi_bind_lcd_ddi(
-						struct mipi_dsim_device *dsim,
+struct mipi_dsim_ddi *exynos_mipi_dsi_bind_lcd_ddi(struct mipi_dsim_device *dsim,
 						const char *name)
 {
 	struct mipi_dsim_ddi *dsim_ddi, *next;
@@ -375,7 +373,6 @@ static int exynos_mipi_dsi_probe(struct platform_device *pdev)
 	dsim->clock = clk_get(&pdev->dev, "dsim0");
 	if (IS_ERR(dsim->clock)) {
 		dev_err(&pdev->dev, "failed to get dsim clock source\n");
-		ret = -ENODEV;
 		goto err_clock_get;
 	}
 
@@ -384,7 +381,6 @@ static int exynos_mipi_dsi_probe(struct platform_device *pdev)
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!res) {
 		dev_err(&pdev->dev, "failed to get io memory region\n");
-		ret = -ENODEV;
 		goto err_platform_get;
 	}
 
@@ -409,7 +405,6 @@ static int exynos_mipi_dsi_probe(struct platform_device *pdev)
 	dsim_ddi = exynos_mipi_dsi_bind_lcd_ddi(dsim, dsim_pd->lcd_panel_name);
 	if (!dsim_ddi) {
 		dev_err(&pdev->dev, "mipi_dsim_ddi object not found.\n");
-		ret = -EINVAL;
 		goto err_bind;
 	}
 
@@ -466,7 +461,7 @@ static int exynos_mipi_dsi_probe(struct platform_device *pdev)
 done:
 	platform_set_drvdata(pdev, dsim);
 
-	dev_dbg(&pdev->dev, "%s() completed successfully (%s mode)\n", __func__,
+	dev_dbg(&pdev->dev, "%s() completed sucessfuly (%s mode)\n", __func__,
 		dsim_config->e_interface == DSIM_COMMAND ? "CPU" : "RGB");
 
 	return 0;

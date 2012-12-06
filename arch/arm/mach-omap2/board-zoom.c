@@ -22,6 +22,7 @@
 #include <asm/mach/arch.h>
 
 #include "common.h"
+#include <plat/board.h>
 #include <plat/usb.h>
 
 #include <mach/board-zoom.h>

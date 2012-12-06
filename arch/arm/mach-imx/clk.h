@@ -3,8 +3,7 @@
 
 #include <linux/spinlock.h>
 #include <linux/clk-provider.h>
-
-extern spinlock_t imx_ccm_lock;
+#include <mach/clock.h>
 
 struct clk *imx_clk_pllv1(const char *name, const char *parent,
 		void __iomem *base);

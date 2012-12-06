@@ -16,10 +16,8 @@
 #include <linux/platform_device.h>
 #include <linux/io.h>
 #include <linux/pm_runtime.h>
-
 #include <plat/mailbox.h>
-
-#include "soc.h"
+#include <mach/irqs.h>
 
 #define MAILBOX_REVISION		0x000
 #define MAILBOX_MESSAGE(m)		(0x040 + 4 * (m))

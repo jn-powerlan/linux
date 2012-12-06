@@ -372,7 +372,7 @@ bool KeybRemoveKey (
     int  i;
 
     if (is_broadcast_ether_addr(pbyBSSID)) {
-        // delete all keys
+        // dealte all key
         if ((dwKeyIndex & PAIRWISE_KEY) != 0) {
             for (i=0;i<MAX_KEY_TABLE;i++) {
                 pTable->KeyTable[i].PairwiseKey.bKeyValid = false;

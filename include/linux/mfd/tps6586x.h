@@ -14,7 +14,6 @@
 #define TPS6586X_SLEW_RATE_MASK         0x07
 
 enum {
-	TPS6586X_ID_SYS,
 	TPS6586X_ID_SM_0,
 	TPS6586X_ID_SM_1,
 	TPS6586X_ID_SM_2,
@@ -78,7 +77,6 @@ struct tps6586x_platform_data {
 
 	int gpio_base;
 	int irq_base;
-	bool pm_off;
 };
 
 /*

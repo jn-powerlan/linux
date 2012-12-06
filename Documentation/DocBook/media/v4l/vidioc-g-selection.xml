@@ -152,10 +152,12 @@ satisfactory parameters have been negotiated. If constraints flags have to be
 violated at then ERANGE is returned. The error indicates that <emphasis> there
 exist no rectangle </emphasis> that satisfies the constraints.</para>
 
+  </refsect1>
+
   <para>Selection targets and flags are documented in <xref
   linkend="v4l2-selections-common"/>.</para>
 
-    <para>
+    <section>
       <figure id="sel-const-adjust">
 	<title>Size adjustments with constraint flags.</title>
 	<mediaobject>
@@ -168,9 +170,9 @@ exist no rectangle </emphasis> that satisfies the constraints.</para>
 	  </textobject>
 	</mediaobject>
       </figure>
-    </para>
+    </section>
 
-  <para>
+  <refsect1>
     <table pgwide="1" frame="none" id="v4l2-selection">
       <title>struct <structname>v4l2_selection</structname></title>
       <tgroup cols="3">
@@ -206,7 +208,6 @@ exist no rectangle </emphasis> that satisfies the constraints.</para>
 	</tbody>
       </tgroup>
     </table>
-  </para>
   </refsect1>
 
   <refsect1>

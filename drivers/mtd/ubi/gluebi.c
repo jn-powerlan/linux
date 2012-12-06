@@ -41,7 +41,7 @@
 #include "ubi-media.h"
 
 #define err_msg(fmt, ...)                                   \
-	pr_err("gluebi (pid %d): %s: " fmt "\n",            \
+	printk(KERN_DEBUG "gluebi (pid %d): %s: " fmt "\n", \
 	       current->pid, __func__, ##__VA_ARGS__)
 
 /**
@@ -341,8 +341,9 @@ static int gluebi_create(struct ubi_device_info *di,
 	mutex_lock(&devices_mutex);
 	g = find_gluebi_nolock(vi->ubi_num, vi->vol_id);
 	if (g)
-		err_msg("gluebi MTD device %d form UBI device %d volume %d already exists",
-			g->mtd.index, vi->ubi_num, vi->vol_id);
+		err_msg("gluebi MTD device %d form UBI device %d volume %d "
+			"already exists", g->mtd.index, vi->ubi_num,
+			vi->vol_id);
 	mutex_unlock(&devices_mutex);
 
 	if (mtd_device_register(mtd, NULL, 0)) {
@@ -375,8 +376,8 @@ static int gluebi_remove(struct ubi_volume_info *vi)
 	mutex_lock(&devices_mutex);
 	gluebi = find_gluebi_nolock(vi->ubi_num, vi->vol_id);
 	if (!gluebi) {
-		err_msg("got remove notification for unknown UBI device %d volume %d",
-			vi->ubi_num, vi->vol_id);
+		err_msg("got remove notification for unknown UBI device %d "
+			"volume %d", vi->ubi_num, vi->vol_id);
 		err = -ENOENT;
 	} else if (gluebi->refcnt)
 		err = -EBUSY;
@@ -389,8 +390,9 @@ static int gluebi_remove(struct ubi_volume_info *vi)
 	mtd = &gluebi->mtd;
 	err = mtd_device_unregister(mtd);
 	if (err) {
-		err_msg("cannot remove fake MTD device %d, UBI device %d, volume %d, error %d",
-			mtd->index, gluebi->ubi_num, gluebi->vol_id, err);
+		err_msg("cannot remove fake MTD device %d, UBI device %d, "
+			"volume %d, error %d", mtd->index, gluebi->ubi_num,
+			gluebi->vol_id, err);
 		mutex_lock(&devices_mutex);
 		list_add_tail(&gluebi->list, &gluebi_devices);
 		mutex_unlock(&devices_mutex);
@@ -420,8 +422,8 @@ static int gluebi_updated(struct ubi_volume_info *vi)
 	gluebi = find_gluebi_nolock(vi->ubi_num, vi->vol_id);
 	if (!gluebi) {
 		mutex_unlock(&devices_mutex);
-		err_msg("got update notification for unknown UBI device %d volume %d",
-			vi->ubi_num, vi->vol_id);
+		err_msg("got update notification for unknown UBI device %d "
+			"volume %d", vi->ubi_num, vi->vol_id);
 		return -ENOENT;
 	}
 
@@ -447,8 +449,8 @@ static int gluebi_resized(struct ubi_volume_info *vi)
 	gluebi = find_gluebi_nolock(vi->ubi_num, vi->vol_id);
 	if (!gluebi) {
 		mutex_unlock(&devices_mutex);
-		err_msg("got update notification for unknown UBI device %d volume %d",
-			vi->ubi_num, vi->vol_id);
+		err_msg("got update notification for unknown UBI device %d "
+			"volume %d", vi->ubi_num, vi->vol_id);
 		return -ENOENT;
 	}
 	gluebi->mtd.size = vi->used_bytes;
@@ -505,9 +507,9 @@ static void __exit ubi_gluebi_exit(void)
 
 		err = mtd_device_unregister(mtd);
 		if (err)
-			err_msg("error %d while removing gluebi MTD device %d, UBI device %d, volume %d - ignoring",
-				err, mtd->index, gluebi->ubi_num,
-				gluebi->vol_id);
+			err_msg("error %d while removing gluebi MTD device %d, "
+				"UBI device %d, volume %d - ignoring", err,
+				mtd->index, gluebi->ubi_num, gluebi->vol_id);
 		kfree(mtd->name);
 		kfree(gluebi);
 	}

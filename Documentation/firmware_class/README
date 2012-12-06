@@ -18,40 +18,32 @@
  High level behavior (mixed):
  ============================
 
- 1), kernel(driver):
-	- calls request_firmware(&fw_entry, $FIRMWARE, device)
-	- kernel searchs the fimware image with name $FIRMWARE directly
-	in the below search path of root filesystem:
-		"/lib/firmware/updates/" UTS_RELEASE,
-		"/lib/firmware/updates",
-		"/lib/firmware/" UTS_RELEASE,
-		"/lib/firmware"
-	- If found, goto 7), else goto 2)
+ kernel(driver): calls request_firmware(&fw_entry, $FIRMWARE, device)
 
- 2), userspace:
+ userspace:
  	- /sys/class/firmware/xxx/{loading,data} appear.
 	- hotplug gets called with a firmware identifier in $FIRMWARE
 	  and the usual hotplug environment.
 		- hotplug: echo 1 > /sys/class/firmware/xxx/loading
 
- 3), kernel: Discard any previous partial load.
+ kernel: Discard any previous partial load.
 
- 4), userspace:
+ userspace:
 		- hotplug: cat appropriate_firmware_image > \
 					/sys/class/firmware/xxx/data
 
- 5), kernel: grows a buffer in PAGE_SIZE increments to hold the image as it
+ kernel: grows a buffer in PAGE_SIZE increments to hold the image as it
 	 comes in.
 
- 6), userspace:
+ userspace:
 		- hotplug: echo 0 > /sys/class/firmware/xxx/loading
 
- 7), kernel: request_firmware() returns and the driver has the firmware
+ kernel: request_firmware() returns and the driver has the firmware
 	 image in fw_entry->{data,size}. If something went wrong
 	 request_firmware() returns non-zero and fw_entry is set to
 	 NULL.
 
- 8), kernel(driver): Driver code calls release_firmware(fw_entry) releasing
+ kernel(driver): Driver code calls release_firmware(fw_entry) releasing
 		 the firmware image and any related resource.
 
  High level behavior (driver code):

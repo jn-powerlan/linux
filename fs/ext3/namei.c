@@ -46,7 +46,8 @@ static struct buffer_head *ext3_append(handle_t *handle,
 
 	*block = inode->i_size >> inode->i_sb->s_blocksize_bits;
 
-	if ((bh = ext3_dir_bread(handle, inode, *block, 1, err))) {
+	bh = ext3_bread(handle, inode, *block, 1, err);
+	if (bh) {
 		inode->i_size += inode->i_sb->s_blocksize;
 		EXT3_I(inode)->i_disksize = inode->i_size;
 		*err = ext3_journal_get_write_access(handle, bh);
@@ -338,10 +339,8 @@ dx_probe(struct qstr *entry, struct inode *dir,
 	u32 hash;
 
 	frame->bh = NULL;
-	if (!(bh = ext3_dir_bread(NULL, dir, 0, 0, err))) {
-		*err = ERR_BAD_DX_DIR;
+	if (!(bh = ext3_bread (NULL,dir, 0, 0, err)))
 		goto fail;
-	}
 	root = (struct dx_root *) bh->b_data;
 	if (root->info.hash_version != DX_HASH_TEA &&
 	    root->info.hash_version != DX_HASH_HALF_MD4 &&
@@ -437,10 +436,8 @@ dx_probe(struct qstr *entry, struct inode *dir,
 		frame->entries = entries;
 		frame->at = at;
 		if (!indirect--) return frame;
-		if (!(bh = ext3_dir_bread(NULL, dir, dx_get_block(at), 0, err))) {
-			*err = ERR_BAD_DX_DIR;
+		if (!(bh = ext3_bread (NULL,dir, dx_get_block(at), 0, err)))
 			goto fail2;
-		}
 		at = entries = ((struct dx_node *) bh->b_data)->entries;
 		if (dx_get_limit(entries) != dx_node_limit (dir)) {
 			ext3_warning(dir->i_sb, __func__,
@@ -538,8 +535,8 @@ static int ext3_htree_next_block(struct inode *dir, __u32 hash,
 	 * block so no check is necessary
 	 */
 	while (num_frames--) {
-		if (!(bh = ext3_dir_bread(NULL, dir, dx_get_block(p->at),
-					  0, &err)))
+		if (!(bh = ext3_bread(NULL, dir, dx_get_block(p->at),
+				      0, &err)))
 			return err; /* Failure */
 		p++;
 		brelse (p->bh);
@@ -562,11 +559,10 @@ static int htree_dirblock_to_tree(struct file *dir_file,
 {
 	struct buffer_head *bh;
 	struct ext3_dir_entry_2 *de, *top;
-	int err = 0, count = 0;
+	int err, count = 0;
 
 	dxtrace(printk("In htree dirblock_to_tree: block %d\n", block));
-
-	if (!(bh = ext3_dir_bread(NULL, dir, block, 0, &err)))
+	if (!(bh = ext3_bread (NULL, dir, block, 0, &err)))
 		return err;
 
 	de = (struct ext3_dir_entry_2 *) bh->b_data;
@@ -980,7 +976,7 @@ static struct buffer_head * ext3_dx_find_entry(struct inode *dir,
 		return NULL;
 	do {
 		block = dx_get_block(frame->at);
-		if (!(bh = ext3_dir_bread (NULL, dir, block, 0, err)))
+		if (!(bh = ext3_bread (NULL,dir, block, 0, err)))
 			goto errout;
 
 		retval = search_dirblock(bh, dir, entry,
@@ -1462,9 +1458,9 @@ static int ext3_add_entry (handle_t *handle, struct dentry *dentry,
 	}
 	blocks = dir->i_size >> sb->s_blocksize_bits;
 	for (block = 0; block < blocks; block++) {
-		if (!(bh = ext3_dir_bread(handle, dir, block, 0, &retval)))
+		bh = ext3_bread(handle, dir, block, 0, &retval);
+		if(!bh)
 			return retval;
-
 		retval = add_dirent_to_buf(handle, dentry, inode, NULL, bh);
 		if (retval != -ENOSPC)
 			return retval;
@@ -1504,7 +1500,7 @@ static int ext3_dx_add_entry(handle_t *handle, struct dentry *dentry,
 	entries = frame->entries;
 	at = frame->at;
 
-	if (!(bh = ext3_dir_bread(handle, dir, dx_get_block(frame->at), 0, &err)))
+	if (!(bh = ext3_bread(handle,dir, dx_get_block(frame->at), 0, &err)))
 		goto cleanup;
 
 	BUFFER_TRACE(bh, "get_write_access");
@@ -1794,7 +1790,8 @@ retry:
 	inode->i_op = &ext3_dir_inode_operations;
 	inode->i_fop = &ext3_dir_operations;
 	inode->i_size = EXT3_I(inode)->i_disksize = inode->i_sb->s_blocksize;
-	if (!(dir_block = ext3_dir_bread(handle, inode, 0, 1, &err)))
+	dir_block = ext3_bread (handle, inode, 0, 1, &err);
+	if (!dir_block)
 		goto out_clear_inode;
 
 	BUFFER_TRACE(dir_block, "get_write_access");
@@ -1862,7 +1859,7 @@ static int empty_dir (struct inode * inode)
 
 	sb = inode->i_sb;
 	if (inode->i_size < EXT3_DIR_REC_LEN(1) + EXT3_DIR_REC_LEN(2) ||
-	    !(bh = ext3_dir_bread(NULL, inode, 0, 0, &err))) {
+	    !(bh = ext3_bread (NULL, inode, 0, 0, &err))) {
 		if (err)
 			ext3_error(inode->i_sb, __func__,
 				   "error %d reading directory #%lu offset 0",
@@ -1893,8 +1890,9 @@ static int empty_dir (struct inode * inode)
 			(void *) de >= (void *) (bh->b_data+sb->s_blocksize)) {
 			err = 0;
 			brelse (bh);
-			if (!(bh = ext3_dir_bread (NULL, inode,
-				offset >> EXT3_BLOCK_SIZE_BITS(sb), 0, &err))) {
+			bh = ext3_bread (NULL, inode,
+				offset >> EXT3_BLOCK_SIZE_BITS(sb), 0, &err);
+			if (!bh) {
 				if (err)
 					ext3_error(sb, __func__,
 						   "error %d reading directory"
@@ -2390,7 +2388,7 @@ static int ext3_rename (struct inode * old_dir, struct dentry *old_dentry,
 				goto end_rename;
 		}
 		retval = -EIO;
-		dir_bh = ext3_dir_bread(handle, old_inode, 0, 0, &retval);
+		dir_bh = ext3_bread (handle, old_inode, 0, 0, &retval);
 		if (!dir_bh)
 			goto end_rename;
 		if (le32_to_cpu(PARENT_INO(dir_bh->b_data)) != old_dir->i_ino)

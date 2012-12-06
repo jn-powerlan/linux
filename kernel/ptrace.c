@@ -180,8 +180,7 @@ static int ptrace_has_cap(struct user_namespace *ns, unsigned int mode)
 		return has_ns_capability(current, ns, CAP_SYS_PTRACE);
 }
 
-/* Returns 0 on success, -errno on denial. */
-static int __ptrace_may_access(struct task_struct *task, unsigned int mode)
+int __ptrace_may_access(struct task_struct *task, unsigned int mode)
 {
 	const struct cred *cred = current_cred(), *tcred;
 

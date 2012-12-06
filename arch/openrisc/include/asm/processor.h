@@ -103,7 +103,7 @@ extern unsigned long thread_saved_pc(struct task_struct *t);
 
 #define init_stack      (init_thread_union.stack)
 
-#define cpu_relax()     barrier()
+#define cpu_relax()     do { } while (0)
 
 #endif /* __ASSEMBLY__ */
 #endif /* __ASM_OPENRISC_PROCESSOR_H */

@@ -29,11 +29,13 @@
 #include <linux/smc91x.h>
 #include <linux/gpio.h>
 
+#include <mach/hardware.h>
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
 #include <asm/mach/flash.h>
 
 #include <plat/led.h>
+#include <plat/board.h>
 #include "common.h"
 #include <plat/gpmc.h>
 
@@ -202,7 +204,7 @@ static inline void __init apollon_init_smc91x(void)
 		return;
 	}
 
-	clk_prepare_enable(gpmc_fck);
+	clk_enable(gpmc_fck);
 	rate = clk_get_rate(gpmc_fck);
 
 	eth_cs = APOLLON_ETH_CS;
@@ -246,7 +248,7 @@ static inline void __init apollon_init_smc91x(void)
 		gpmc_cs_free(APOLLON_ETH_CS);
 	}
 out:
-	clk_disable_unprepare(gpmc_fck);
+	clk_disable(gpmc_fck);
 	clk_put(gpmc_fck);
 }
 

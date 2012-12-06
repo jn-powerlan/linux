@@ -1,10 +1,6 @@
-#include <pthread.h>
+#include "../cache.h"
+#include "../debug.h"
 
-#include "../util/cache.h"
-#include "../util/debug.h"
-#include "../util/hist.h"
-
-pthread_mutex_t ui__lock = PTHREAD_MUTEX_INITIALIZER;
 
 void setup_browser(bool fallback_to_pager)
 {
@@ -29,8 +25,6 @@ void setup_browser(bool fallback_to_pager)
 		use_browser = 0;
 		if (fallback_to_pager)
 			setup_pager();
-
-		perf_hpp__init();
 		break;
 	}
 }

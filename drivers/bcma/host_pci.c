@@ -77,8 +77,8 @@ static void bcma_host_pci_write32(struct bcma_device *core, u16 offset,
 }
 
 #ifdef CONFIG_BCMA_BLOCKIO
-static void bcma_host_pci_block_read(struct bcma_device *core, void *buffer,
-				     size_t count, u16 offset, u8 reg_width)
+void bcma_host_pci_block_read(struct bcma_device *core, void *buffer,
+			      size_t count, u16 offset, u8 reg_width)
 {
 	void __iomem *addr = core->bus->mmio + offset;
 	if (core->bus->mapped_core != core)
@@ -100,9 +100,8 @@ static void bcma_host_pci_block_read(struct bcma_device *core, void *buffer,
 	}
 }
 
-static void bcma_host_pci_block_write(struct bcma_device *core,
-				      const void *buffer, size_t count,
-				      u16 offset, u8 reg_width)
+void bcma_host_pci_block_write(struct bcma_device *core, const void *buffer,
+			       size_t count, u16 offset, u8 reg_width)
 {
 	void __iomem *addr = core->bus->mmio + offset;
 	if (core->bus->mapped_core != core)
@@ -140,7 +139,7 @@ static void bcma_host_pci_awrite32(struct bcma_device *core, u16 offset,
 	iowrite32(value, core->bus->mmio + (1 * BCMA_CORE_SIZE) + offset);
 }
 
-static const struct bcma_host_ops bcma_host_pci_ops = {
+const struct bcma_host_ops bcma_host_pci_ops = {
 	.read8		= bcma_host_pci_read8,
 	.read16		= bcma_host_pci_read16,
 	.read32		= bcma_host_pci_read32,
@@ -273,7 +272,6 @@ static DEFINE_PCI_DEVICE_TABLE(bcma_pci_bridge_tbl) = {
 	{ PCI_DEVICE(PCI_VENDOR_ID_BROADCOM, 0x4331) },
 	{ PCI_DEVICE(PCI_VENDOR_ID_BROADCOM, 0x4353) },
 	{ PCI_DEVICE(PCI_VENDOR_ID_BROADCOM, 0x4357) },
-	{ PCI_DEVICE(PCI_VENDOR_ID_BROADCOM, 0x4358) },
 	{ PCI_DEVICE(PCI_VENDOR_ID_BROADCOM, 0x4359) },
 	{ PCI_DEVICE(PCI_VENDOR_ID_BROADCOM, 0x4727) },
 	{ 0, },

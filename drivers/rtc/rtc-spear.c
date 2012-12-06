@@ -235,7 +235,7 @@ static int spear_rtc_read_time(struct device *dev, struct rtc_time *tm)
 static int spear_rtc_set_time(struct device *dev, struct rtc_time *tm)
 {
 	struct spear_rtc_config *config = dev_get_drvdata(dev);
-	unsigned int time, date;
+	unsigned int time, date, err = 0;
 
 	if (tm2bcd(tm) < 0)
 		return -EINVAL;
@@ -247,8 +247,11 @@ static int spear_rtc_set_time(struct device *dev, struct rtc_time *tm)
 		(tm->tm_year << YEAR_SHIFT);
 	writel(time, config->ioaddr + TIME_REG);
 	writel(date, config->ioaddr + DATE_REG);
+	err = is_write_complete(config);
+	if (err < 0)
+		return err;
 
-	return is_write_complete(config);
+	return 0;
 }
 
 /*
@@ -292,8 +295,7 @@ static int spear_rtc_read_alarm(struct device *dev, struct rtc_wkalrm *alm)
 static int spear_rtc_set_alarm(struct device *dev, struct rtc_wkalrm *alm)
 {
 	struct spear_rtc_config *config = dev_get_drvdata(dev);
-	unsigned int time, date;
-	int err;
+	unsigned int time, date, err = 0;
 
 	if (tm2bcd(&alm->time) < 0)
 		return -EINVAL;
@@ -355,7 +357,7 @@ static int __devinit spear_rtc_probe(struct platform_device *pdev)
 {
 	struct resource *res;
 	struct spear_rtc_config *config;
-	int status = 0;
+	unsigned int status = 0;
 	int irq;
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);

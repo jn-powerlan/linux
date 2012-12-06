@@ -59,7 +59,7 @@
 
 
 static struct svc_sock *svc_setup_socket(struct svc_serv *, struct socket *,
-					 int flags);
+					 int *errp, int flags);
 static void		svc_udp_data_ready(struct sock *, int);
 static int		svc_udp_recvfrom(struct svc_rqst *);
 static int		svc_udp_sendto(struct svc_rqst *);
@@ -305,6 +305,57 @@ static int svc_one_sock_name(struct svc_sock *svsk, char *buf, int remaining)
 	return len;
 }
 
+/**
+ * svc_sock_names - construct a list of listener names in a string
+ * @serv: pointer to RPC service
+ * @buf: pointer to a buffer to fill in with socket names
+ * @buflen: size of the buffer to be filled
+ * @toclose: pointer to '\0'-terminated C string containing the name
+ *		of a listener to be closed
+ *
+ * Fills in @buf with a '\n'-separated list of names of listener
+ * sockets.  If @toclose is not NULL, the socket named by @toclose
+ * is closed, and is not included in the output list.
+ *
+ * Returns positive length of the socket name string, or a negative
+ * errno value on error.
+ */
+int svc_sock_names(struct svc_serv *serv, char *buf, const size_t buflen,
+		   const char *toclose)
+{
+	struct svc_sock *svsk, *closesk = NULL;
+	int len = 0;
+
+	if (!serv)
+		return 0;
+
+	spin_lock_bh(&serv->sv_lock);
+	list_for_each_entry(svsk, &serv->sv_permsocks, sk_xprt.xpt_list) {
+		int onelen = svc_one_sock_name(svsk, buf + len, buflen - len);
+		if (onelen < 0) {
+			len = onelen;
+			break;
+		}
+		if (toclose && strcmp(toclose, buf + len) == 0) {
+			closesk = svsk;
+			svc_xprt_get(&closesk->sk_xprt);
+		} else
+			len += onelen;
+	}
+	spin_unlock_bh(&serv->sv_lock);
+
+	if (closesk) {
+		/* Should unregister with portmap, but you cannot
+		 * unregister just one protocol...
+		 */
+		svc_close_xprt(&closesk->sk_xprt);
+		svc_xprt_put(&closesk->sk_xprt);
+	} else if (toclose)
+		return -ENOENT;
+	return len;
+}
+EXPORT_SYMBOL_GPL(svc_sock_names);
+
 /*
  * Check input queue length
  */
@@ -547,9 +598,11 @@ static int svc_udp_recvfrom(struct svc_rqst *rqstp)
 			dprintk("svc: recvfrom returned error %d\n", -err);
 			set_bit(XPT_DATA, &svsk->sk_xprt.xpt_flags);
 		}
-		return 0;
+		return -EAGAIN;
 	}
 	len = svc_addr_len(svc_addr(rqstp));
+	if (len == 0)
+		return -EAFNOSUPPORT;
 	rqstp->rq_addrlen = len;
 	if (skb->tstamp.tv64 == 0) {
 		skb->tstamp = ktime_get_real();
@@ -567,7 +620,10 @@ static int svc_udp_recvfrom(struct svc_rqst *rqstp)
 	if (!svc_udp_get_dest_address(rqstp, cmh)) {
 		net_warn_ratelimited("svc: received unknown control message %d/%d; dropping RPC reply datagram\n",
 				     cmh->cmsg_level, cmh->cmsg_type);
-		goto out_free;
+out_free:
+		trace_kfree_skb(skb, svc_udp_recvfrom);
+		skb_free_datagram_locked(svsk->sk_sk, skb);
+		return 0;
 	}
 	rqstp->rq_daddrlen = svc_addr_len(svc_daddr(rqstp));
 
@@ -606,10 +662,6 @@ static int svc_udp_recvfrom(struct svc_rqst *rqstp)
 		serv->sv_stats->netudpcnt++;
 
 	return len;
-out_free:
-	trace_kfree_skb(skb, svc_udp_recvfrom);
-	skb_free_datagram_locked(svsk->sk_sk, skb);
-	return 0;
 }
 
 static int
@@ -848,9 +900,8 @@ static struct svc_xprt *svc_tcp_accept(struct svc_xprt *xprt)
 	 */
 	newsock->sk->sk_sndtimeo = HZ*30;
 
-	newsvsk = svc_setup_socket(serv, newsock,
-				 (SVC_SOCK_ANONYMOUS | SVC_SOCK_TEMPORARY));
-	if (IS_ERR(newsvsk))
+	if (!(newsvsk = svc_setup_socket(serv, newsock, &err,
+				 (SVC_SOCK_ANONYMOUS | SVC_SOCK_TEMPORARY))))
 		goto failed;
 	svc_xprt_set_remote(&newsvsk->sk_xprt, sin, slen);
 	err = kernel_getsockname(newsock, sin, &slen);
@@ -1123,13 +1174,13 @@ error:
 	if (len != -EAGAIN)
 		goto err_other;
 	dprintk("RPC: TCP recvfrom got EAGAIN\n");
-	return 0;
+	return -EAGAIN;
 err_other:
 	printk(KERN_NOTICE "%s: recvfrom returned errno %d\n",
 	       svsk->sk_xprt.xpt_server->sv_name, -len);
 	set_bit(XPT_CLOSE, &svsk->sk_xprt.xpt_flags);
 err_noclose:
-	return 0;	/* record not complete */
+	return -EAGAIN;	/* record not complete */
 }
 
 /*
@@ -1332,29 +1383,29 @@ EXPORT_SYMBOL_GPL(svc_sock_update_bufs);
  */
 static struct svc_sock *svc_setup_socket(struct svc_serv *serv,
 						struct socket *sock,
-						int flags)
+						int *errp, int flags)
 {
 	struct svc_sock	*svsk;
 	struct sock	*inet;
 	int		pmap_register = !(flags & SVC_SOCK_ANONYMOUS);
-	int		err = 0;
 
 	dprintk("svc: svc_setup_socket %p\n", sock);
-	svsk = kzalloc(sizeof(*svsk), GFP_KERNEL);
-	if (!svsk)
-		return ERR_PTR(-ENOMEM);
+	if (!(svsk = kzalloc(sizeof(*svsk), GFP_KERNEL))) {
+		*errp = -ENOMEM;
+		return NULL;
+	}
 
 	inet = sock->sk;
 
 	/* Register socket with portmapper */
-	if (pmap_register)
-		err = svc_register(serv, sock_net(sock->sk), inet->sk_family,
+	if (*errp >= 0 && pmap_register)
+		*errp = svc_register(serv, sock_net(sock->sk), inet->sk_family,
 				     inet->sk_protocol,
 				     ntohs(inet_sk(inet)->inet_sport));
 
-	if (err < 0) {
+	if (*errp < 0) {
 		kfree(svsk);
-		return ERR_PTR(err);
+		return NULL;
 	}
 
 	inet->sk_user_data = svsk;
@@ -1399,38 +1450,42 @@ int svc_addsock(struct svc_serv *serv, const int fd, char *name_return,
 	int err = 0;
 	struct socket *so = sockfd_lookup(fd, &err);
 	struct svc_sock *svsk = NULL;
-	struct sockaddr_storage addr;
-	struct sockaddr *sin = (struct sockaddr *)&addr;
-	int salen;
 
 	if (!so)
 		return err;
-	err = -EAFNOSUPPORT;
 	if ((so->sk->sk_family != PF_INET) && (so->sk->sk_family != PF_INET6))
-		goto out;
-	err =  -EPROTONOSUPPORT;
-	if (so->sk->sk_protocol != IPPROTO_TCP &&
+		err =  -EAFNOSUPPORT;
+	else if (so->sk->sk_protocol != IPPROTO_TCP &&
 	    so->sk->sk_protocol != IPPROTO_UDP)
-		goto out;
-	err = -EISCONN;
-	if (so->state > SS_UNCONNECTED)
-		goto out;
-	err = -ENOENT;
-	if (!try_module_get(THIS_MODULE))
-		goto out;
-	svsk = svc_setup_socket(serv, so, SVC_SOCK_DEFAULTS);
-	if (IS_ERR(svsk)) {
-		module_put(THIS_MODULE);
-		err = PTR_ERR(svsk);
-		goto out;
+		err =  -EPROTONOSUPPORT;
+	else if (so->state > SS_UNCONNECTED)
+		err = -EISCONN;
+	else {
+		if (!try_module_get(THIS_MODULE))
+			err = -ENOENT;
+		else
+			svsk = svc_setup_socket(serv, so, &err,
+						SVC_SOCK_DEFAULTS);
+		if (svsk) {
+			struct sockaddr_storage addr;
+			struct sockaddr *sin = (struct sockaddr *)&addr;
+			int salen;
+			if (kernel_getsockname(svsk->sk_sock, sin, &salen) == 0)
+				svc_xprt_set_local(&svsk->sk_xprt, sin, salen);
+			clear_bit(XPT_TEMP, &svsk->sk_xprt.xpt_flags);
+			spin_lock_bh(&serv->sv_lock);
+			list_add(&svsk->sk_xprt.xpt_list, &serv->sv_permsocks);
+			spin_unlock_bh(&serv->sv_lock);
+			svc_xprt_received(&svsk->sk_xprt);
+			err = 0;
+		} else
+			module_put(THIS_MODULE);
 	}
-	if (kernel_getsockname(svsk->sk_sock, sin, &salen) == 0)
-		svc_xprt_set_local(&svsk->sk_xprt, sin, salen);
-	svc_add_new_perm_xprt(serv, &svsk->sk_xprt);
+	if (err) {
+		sockfd_put(so);
+		return err;
+	}
 	return svc_one_sock_name(svsk, name_return, len);
-out:
-	sockfd_put(so);
-	return err;
 }
 EXPORT_SYMBOL_GPL(svc_addsock);
 
@@ -1508,13 +1563,11 @@ static struct svc_xprt *svc_create_socket(struct svc_serv *serv,
 			goto bummer;
 	}
 
-	svsk = svc_setup_socket(serv, sock, flags);
-	if (IS_ERR(svsk)) {
-		error = PTR_ERR(svsk);
-		goto bummer;
+	if ((svsk = svc_setup_socket(serv, sock, &error, flags)) != NULL) {
+		svc_xprt_set_local(&svsk->sk_xprt, newsin, newlen);
+		return (struct svc_xprt *)svsk;
 	}
-	svc_xprt_set_local(&svsk->sk_xprt, newsin, newlen);
-	return (struct svc_xprt *)svsk;
+
 bummer:
 	dprintk("svc: svc_create_socket error = %d\n", -error);
 	sock_release(sock);

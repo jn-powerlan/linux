@@ -12,9 +12,20 @@
 #include <linux/version.h>
 #include <linux/kthread.h>
 #include <linux/module.h>
-#include <linux/freezer.h>
-#include <linux/semaphore.h>
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 34)
 #include <linux/slab.h>
+#endif
+
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2, 6, 19)
+#include <linux/freezer.h>
+#endif
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 27)
+#include <asm/semaphore.h>
+#else
+#include <linux/semaphore.h>
+#endif
+
 #include <linux/bitops.h>
 
 #include "csr_framework_ext.h"

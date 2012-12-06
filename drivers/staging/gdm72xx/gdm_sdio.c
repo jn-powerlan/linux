@@ -60,20 +60,27 @@ static void hexdump(char *title, u8 *data, int len)
 
 static struct sdio_tx *alloc_tx_struct(struct tx_cxt *tx)
 {
-	struct sdio_tx *t = kzalloc(sizeof(*t), GFP_ATOMIC);
+	struct sdio_tx *t = NULL;
 
-	if (!t)
-		return NULL;
+	t = kmalloc(sizeof(*t), GFP_ATOMIC);
+	if (t == NULL)
+		goto out;
+
+	memset(t, 0, sizeof(*t));
 
 	t->buf = kmalloc(TX_BUF_SIZE, GFP_ATOMIC);
-	if (!t->buf) {
-		kfree(t);
-		return NULL;
-	}
+	if (t->buf == NULL)
+		goto out;
 
 	t->tx_cxt = tx;
 
 	return t;
+out:
+	if (t) {
+		kfree(t->buf);
+		kfree(t);
+	}
+	return NULL;
 }
 
 static void free_tx_struct(struct sdio_tx *t)
@@ -86,12 +93,20 @@ static void free_tx_struct(struct sdio_tx *t)
 
 static struct sdio_rx *alloc_rx_struct(struct rx_cxt *rx)
 {
-	struct sdio_rx *r = kzalloc(sizeof(*r), GFP_ATOMIC);
+	struct sdio_rx *r = NULL;
 
-	if (r)
-		r->rx_cxt = rx;
+	r = kmalloc(sizeof(*r), GFP_ATOMIC);
+	if (r == NULL)
+		goto out;
+
+	memset(r, 0, sizeof(*r));
+
+	r->rx_cxt = rx;
 
 	return r;
+out:
+	kfree(r);
+	return NULL;
 }
 
 static void free_rx_struct(struct sdio_rx *r)
@@ -665,7 +680,7 @@ static int sdio_wimax_probe(struct sdio_func *func,
 	phy_dev->rcv_func = gdm_sdio_receive;
 
 	ret = init_sdio(sdev);
-	if (ret < 0)
+	if (sdev < 0)
 		goto out;
 
 	sdev->func = func;

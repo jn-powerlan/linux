@@ -28,6 +28,7 @@
 
 #include <linux/module.h>
 #include <linux/moduleparam.h>
+#include <generated/utsrelease.h>
 #include <linux/utsname.h>
 #include <linux/init.h>
 #include <linux/slab.h>
@@ -327,12 +328,11 @@ drop:
  */
 void ft_invl_hw_context(struct ft_cmd *cmd)
 {
-	struct fc_seq *seq;
+	struct fc_seq *seq = cmd->seq;
 	struct fc_exch *ep = NULL;
 	struct fc_lport *lport = NULL;
 
 	BUG_ON(!cmd);
-	seq = cmd->seq;
 
 	/* Cleanup the DDP context in HW if DDP was setup */
 	if (cmd->was_ddp_setup && seq) {

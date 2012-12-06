@@ -156,12 +156,12 @@ extern int arch_setup_additional_pages(struct linux_binprm *bprm,
 #undef SET_PERSONALITY
 #define SET_PERSONALITY(ex) \
 do { \
-	set_personality(PER_LINUX | (current->personality & (~PER_MASK))); \
+	current->personality = PER_LINUX; \
 	current_thread_info()->status &= ~TS_COMPAT; \
 } while (0)
 #define COMPAT_SET_PERSONALITY(ex) \
 do { \
-	set_personality(PER_LINUX | (current->personality & (~PER_MASK))); \
+	current->personality = PER_LINUX_32BIT; \
 	current_thread_info()->status |= TS_COMPAT; \
 } while (0)
 

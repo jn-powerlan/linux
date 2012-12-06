@@ -774,7 +774,7 @@ int ata_build_rw_tf(struct ata_taskfile *tf, struct ata_device *dev,
 		tf->lbam = (block >> 8) & 0xff;
 		tf->lbal = block & 0xff;
 
-		tf->device = ATA_LBA;
+		tf->device = 1 << 6;
 		if (tf->flags & ATA_TFLAG_FUA)
 			tf->device |= 1 << 7;
 	} else if (dev->flags & ATA_DFLAG_LBA) {
@@ -2155,7 +2155,6 @@ int ata_dev_configure(struct ata_device *dev)
 	int print_info = ehc->i.flags & ATA_EHI_PRINTINFO;
 	const u16 *id = dev->id;
 	unsigned long xfer_mask;
-	unsigned int err_mask;
 	char revbuf[7];		/* XYZ-99\0 */
 	char fwrevbuf[ATA_ID_FW_REV_LEN+1];
 	char modelbuf[ATA_ID_PROD_LEN+1];
@@ -2324,26 +2323,6 @@ int ata_dev_configure(struct ata_device *dev)
 			}
 		}
 
-		/* check and mark DevSlp capability */
-		if (ata_id_has_devslp(dev->id))
-			dev->flags |= ATA_DFLAG_DEVSLP;
-
-		/* Obtain SATA Settings page from Identify Device Data Log,
-		 * which contains DevSlp timing variables etc.
-		 * Exclude old devices with ata_id_has_ncq()
-		 */
-		if (ata_id_has_ncq(dev->id)) {
-			err_mask = ata_read_log_page(dev,
-						     ATA_LOG_SATA_ID_DEV_DATA,
-						     ATA_LOG_SATA_SETTINGS,
-						     dev->sata_settings,
-						     1);
-			if (err_mask)
-				ata_dev_dbg(dev,
-					    "failed to get Identify Device Data, Emask 0x%x\n",
-					    err_mask);
-		}
-
 		dev->cdb_len = 16;
 	}
 
@@ -2372,6 +2351,8 @@ int ata_dev_configure(struct ata_device *dev)
 		    (ap->flags & ATA_FLAG_AN) && ata_id_has_atapi_AN(id) &&
 		    (!sata_pmp_attached(ap) ||
 		     sata_scr_read(&ap->link, SCR_NOTIFICATION, &sntf) == 0)) {
+			unsigned int err_mask;
+
 			/* issue SET feature command to turn this on */
 			err_mask = ata_dev_set_feature(dev,
 					SETFEATURES_SATA_ENABLE, SATA_AN);
@@ -2942,10 +2923,6 @@ const struct ata_timing *ata_timing_find_mode(u8 xfer_mode)
 
 	if (xfer_mode == t->mode)
 		return t;
-
-	WARN_ONCE(true, "%s: unable to find timing for xfer_mode 0x%x\n",
-			__func__, xfer_mode);
-
 	return NULL;
 }
 
@@ -3621,7 +3598,7 @@ int sata_link_scr_lpm(struct ata_link *link, enum ata_lpm_policy policy,
 	switch (policy) {
 	case ATA_LPM_MAX_POWER:
 		/* disable all LPM transitions */
-		scontrol |= (0x7 << 8);
+		scontrol |= (0x3 << 8);
 		/* initiate transition to active state */
 		if (spm_wakeup) {
 			scontrol |= (0x4 << 12);
@@ -3631,12 +3608,12 @@ int sata_link_scr_lpm(struct ata_link *link, enum ata_lpm_policy policy,
 	case ATA_LPM_MED_POWER:
 		/* allow LPM to PARTIAL */
 		scontrol &= ~(0x1 << 8);
-		scontrol |= (0x6 << 8);
+		scontrol |= (0x2 << 8);
 		break;
 	case ATA_LPM_MIN_POWER:
 		if (ata_link_nr_enabled(link) > 0)
 			/* no restrictions on LPM transitions */
-			scontrol &= ~(0x7 << 8);
+			scontrol &= ~(0x3 << 8);
 		else {
 			/* empty port, power off */
 			scontrol &= ~0xf;
@@ -4495,7 +4472,6 @@ unsigned int ata_dev_set_feature(struct ata_device *dev, u8 enable, u8 feature)
 	DPRINTK("EXIT, err_mask=%x\n", err_mask);
 	return err_mask;
 }
-EXPORT_SYMBOL_GPL(ata_dev_set_feature);
 
 /**
  *	ata_dev_init_params - Issue INIT DEV PARAMS command
@@ -5277,20 +5253,16 @@ bool ata_link_offline(struct ata_link *link)
 #ifdef CONFIG_PM
 static int ata_port_request_pm(struct ata_port *ap, pm_message_t mesg,
 			       unsigned int action, unsigned int ehi_flags,
-			       int *async)
+			       int wait)
 {
 	struct ata_link *link;
 	unsigned long flags;
-	int rc = 0;
+	int rc;
 
 	/* Previous resume operation might still be in
 	 * progress.  Wait for PM_PENDING to clear.
 	 */
 	if (ap->pflags & ATA_PFLAG_PM_PENDING) {
-		if (async) {
-			*async = -EAGAIN;
-			return 0;
-		}
 		ata_port_wait_eh(ap);
 		WARN_ON(ap->pflags & ATA_PFLAG_PM_PENDING);
 	}
@@ -5299,10 +5271,10 @@ static int ata_port_request_pm(struct ata_port *ap, pm_message_t mesg,
 	spin_lock_irqsave(ap->lock, flags);
 
 	ap->pm_mesg = mesg;
-	if (async)
-		ap->pm_result = async;
-	else
+	if (wait) {
+		rc = 0;
 		ap->pm_result = &rc;
+	}
 
 	ap->pflags |= ATA_PFLAG_PM_PENDING;
 	ata_for_each_link(link, ap, HOST_FIRST) {
@@ -5315,7 +5287,7 @@ static int ata_port_request_pm(struct ata_port *ap, pm_message_t mesg,
 	spin_unlock_irqrestore(ap->lock, flags);
 
 	/* wait and check result */
-	if (!async) {
+	if (wait) {
 		ata_port_wait_eh(ap);
 		WARN_ON(ap->pflags & ATA_PFLAG_PM_PENDING);
 	}
@@ -5323,8 +5295,9 @@ static int ata_port_request_pm(struct ata_port *ap, pm_message_t mesg,
 	return rc;
 }
 
-static int __ata_port_suspend_common(struct ata_port *ap, pm_message_t mesg, int *async)
+static int ata_port_suspend_common(struct device *dev, pm_message_t mesg)
 {
+	struct ata_port *ap = to_ata_port(dev);
 	unsigned int ehi_flags = ATA_EHI_QUIET;
 	int rc;
 
@@ -5339,15 +5312,8 @@ static int __ata_port_suspend_common(struct ata_port *ap, pm_message_t mesg, int
 	if (mesg.event == PM_EVENT_SUSPEND)
 		ehi_flags |= ATA_EHI_NO_AUTOPSY | ATA_EHI_NO_RECOVERY;
 
-	rc = ata_port_request_pm(ap, mesg, 0, ehi_flags, async);
+	rc = ata_port_request_pm(ap, mesg, 0, ehi_flags, 1);
 	return rc;
-}
-
-static int ata_port_suspend_common(struct device *dev, pm_message_t mesg)
-{
-	struct ata_port *ap = to_ata_port(dev);
-
-	return __ata_port_suspend_common(ap, mesg, NULL);
 }
 
 static int ata_port_suspend(struct device *dev)
@@ -5374,20 +5340,14 @@ static int ata_port_poweroff(struct device *dev)
 	return ata_port_suspend_common(dev, PMSG_HIBERNATE);
 }
 
-static int __ata_port_resume_common(struct ata_port *ap, int *async)
-{
-	int rc;
-
-	rc = ata_port_request_pm(ap, PMSG_ON, ATA_EH_RESET,
-		ATA_EHI_NO_AUTOPSY | ATA_EHI_QUIET, async);
-	return rc;
-}
-
 static int ata_port_resume_common(struct device *dev)
 {
 	struct ata_port *ap = to_ata_port(dev);
+	int rc;
 
-	return __ata_port_resume_common(ap, NULL);
+	rc = ata_port_request_pm(ap, PMSG_ON, ATA_EH_RESET,
+		ATA_EHI_NO_AUTOPSY | ATA_EHI_QUIET, 1);
+	return rc;
 }
 
 static int ata_port_resume(struct device *dev)
@@ -5421,24 +5381,6 @@ static const struct dev_pm_ops ata_port_pm_ops = {
 	.runtime_resume = ata_port_resume_common,
 	.runtime_idle = ata_port_runtime_idle,
 };
-
-/* sas ports don't participate in pm runtime management of ata_ports,
- * and need to resume ata devices at the domain level, not the per-port
- * level. sas suspend/resume is async to allow parallel port recovery
- * since sas has multiple ata_port instances per Scsi_Host.
- */
-int ata_sas_port_async_suspend(struct ata_port *ap, int *async)
-{
-	return __ata_port_suspend_common(ap, PMSG_SUSPEND, async);
-}
-EXPORT_SYMBOL_GPL(ata_sas_port_async_suspend);
-
-int ata_sas_port_async_resume(struct ata_port *ap, int *async)
-{
-	return __ata_port_resume_common(ap, async);
-}
-EXPORT_SYMBOL_GPL(ata_sas_port_async_resume);
-
 
 /**
  *	ata_host_suspend - suspend host
@@ -5985,18 +5927,24 @@ int ata_host_start(struct ata_host *host)
 }
 
 /**
- *	ata_sas_host_init - Initialize a host struct for sas (ipr, libsas)
+ *	ata_sas_host_init - Initialize a host struct
  *	@host:	host to initialize
  *	@dev:	device host is attached to
+ *	@flags:	host flags
  *	@ops:	port_ops
  *
+ *	LOCKING:
+ *	PCI/etc. bus probe sem.
+ *
  */
+/* KILLME - the only user left is ipr */
 void ata_host_init(struct ata_host *host, struct device *dev,
-		   struct ata_port_operations *ops)
+		   unsigned long flags, struct ata_port_operations *ops)
 {
 	spin_lock_init(&host->lock);
 	mutex_init(&host->eh_mutex);
 	host->dev = dev;
+	host->flags = flags;
 	host->ops = ops;
 }
 
@@ -6440,7 +6388,6 @@ static int __init ata_parse_force_one(char **cur,
 		{ "nohrst",	.lflags		= ATA_LFLAG_NO_HRST },
 		{ "nosrst",	.lflags		= ATA_LFLAG_NO_SRST },
 		{ "norst",	.lflags		= ATA_LFLAG_NO_HRST | ATA_LFLAG_NO_SRST },
-		{ "rstonce",	.lflags		= ATA_LFLAG_RST_ONCE },
 	};
 	char *start = *cur, *p = *cur;
 	char *id, *val, *endp;

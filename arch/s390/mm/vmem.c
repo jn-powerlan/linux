@@ -79,8 +79,7 @@ static pte_t __ref *vmem_pte_alloc(unsigned long address)
  */
 static int vmem_add_mem(unsigned long start, unsigned long size, int ro)
 {
-	unsigned long end = start + size;
-	unsigned long address = start;
+	unsigned long address;
 	pgd_t *pg_dir;
 	pud_t *pu_dir;
 	pmd_t *pm_dir;
@@ -88,7 +87,7 @@ static int vmem_add_mem(unsigned long start, unsigned long size, int ro)
 	pte_t  pte;
 	int ret = -ENOMEM;
 
-	while (address < end) {
+	for (address = start; address < start + size; address += PAGE_SIZE) {
 		pg_dir = pgd_offset_k(address);
 		if (pgd_none(*pg_dir)) {
 			pu_dir = vmem_pud_alloc();
@@ -108,12 +107,13 @@ static int vmem_add_mem(unsigned long start, unsigned long size, int ro)
 		pte = mk_pte_phys(address, __pgprot(ro ? _PAGE_RO : 0));
 		pm_dir = pmd_offset(pu_dir, address);
 
-#if defined(CONFIG_64BIT) && !defined(CONFIG_DEBUG_PAGEALLOC)
-		if (MACHINE_HAS_EDAT1 && pmd_none(*pm_dir) && address &&
-		    !(address & ~PMD_MASK) && (address + PMD_SIZE <= end)) {
+#ifdef CONFIG_64BIT
+		if (MACHINE_HAS_HPAGE && !(address & ~HPAGE_MASK) &&
+		    (address + HPAGE_SIZE <= start + size) &&
+		    (address >= HPAGE_SIZE)) {
 			pte_val(pte) |= _SEGMENT_ENTRY_LARGE;
 			pmd_val(*pm_dir) = pte_val(pte);
-			address += PMD_SIZE;
+			address += HPAGE_SIZE - PAGE_SIZE;
 			continue;
 		}
 #endif
@@ -126,11 +126,10 @@ static int vmem_add_mem(unsigned long start, unsigned long size, int ro)
 
 		pt_dir = pte_offset_kernel(pm_dir, address);
 		*pt_dir = pte;
-		address += PAGE_SIZE;
 	}
 	ret = 0;
 out:
-	flush_tlb_kernel_range(start, end);
+	flush_tlb_kernel_range(start, start + size);
 	return ret;
 }
 
@@ -140,8 +139,7 @@ out:
  */
 static void vmem_remove_range(unsigned long start, unsigned long size)
 {
-	unsigned long end = start + size;
-	unsigned long address = start;
+	unsigned long address;
 	pgd_t *pg_dir;
 	pud_t *pu_dir;
 	pmd_t *pm_dir;
@@ -149,32 +147,25 @@ static void vmem_remove_range(unsigned long start, unsigned long size)
 	pte_t  pte;
 
 	pte_val(pte) = _PAGE_TYPE_EMPTY;
-	while (address < end) {
+	for (address = start; address < start + size; address += PAGE_SIZE) {
 		pg_dir = pgd_offset_k(address);
-		if (pgd_none(*pg_dir)) {
-			address += PGDIR_SIZE;
-			continue;
-		}
 		pu_dir = pud_offset(pg_dir, address);
-		if (pud_none(*pu_dir)) {
-			address += PUD_SIZE;
+		if (pud_none(*pu_dir))
 			continue;
-		}
 		pm_dir = pmd_offset(pu_dir, address);
-		if (pmd_none(*pm_dir)) {
-			address += PMD_SIZE;
+		if (pmd_none(*pm_dir))
 			continue;
-		}
-		if (pmd_large(*pm_dir)) {
+
+		if (pmd_huge(*pm_dir)) {
 			pmd_clear(pm_dir);
-			address += PMD_SIZE;
+			address += HPAGE_SIZE - PAGE_SIZE;
 			continue;
 		}
+
 		pt_dir = pte_offset_kernel(pm_dir, address);
 		*pt_dir = pte;
-		address += PAGE_SIZE;
 	}
-	flush_tlb_kernel_range(start, end);
+	flush_tlb_kernel_range(start, start + size);
 }
 
 /*
@@ -339,8 +330,8 @@ void __init vmem_map_init(void)
 	unsigned long start, end;
 	int i;
 
-	ro_start = PFN_ALIGN((unsigned long)&_stext);
-	ro_end = (unsigned long)&_eshared & PAGE_MASK;
+	ro_start = ((unsigned long)&_stext) & PAGE_MASK;
+	ro_end = PFN_ALIGN((unsigned long)&_eshared);
 	for (i = 0; i < MEMORY_CHUNKS && memory_chunk[i].size > 0; i++) {
 		if (memory_chunk[i].type == CHUNK_CRASHK ||
 		    memory_chunk[i].type == CHUNK_OLDMEM)

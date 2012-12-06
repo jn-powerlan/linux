@@ -24,7 +24,7 @@
 #include <linux/init.h>
 #include <linux/types.h>
 #include <linux/device.h>
-#include <asm/cell-pmu.h>
+#include "cell-pmu.h"
 
 union ps3_firmware_version {
 	u64 raw;

@@ -225,7 +225,7 @@ int wvlan_uil_connect( struct uilreq *urq, struct wl_private *lp )
  *
  *  DESCRIPTION:
  *
- *      Disconnect from the UIL after a request has been completed.
+ *      Disonnect from the UIL after a request has been completed.
  *
  *  PARAMETERS:
  *

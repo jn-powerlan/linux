@@ -243,18 +243,12 @@ void __btrfs_abort_transaction(struct btrfs_trans_handle *trans,
 			       struct btrfs_root *root, const char *function,
 			       unsigned int line, int errno)
 {
-	WARN_ONCE(1, KERN_DEBUG "btrfs: Transaction aborted\n");
+	WARN_ONCE(1, KERN_DEBUG "btrfs: Transaction aborted");
 	trans->aborted = errno;
 	/* Nothing used. The other threads that have joined this
 	 * transaction may be able to continue. */
 	if (!trans->blocks_used) {
-		char nbuf[16];
-		const char *errstr;
-
-		errstr = btrfs_decode_error(root->fs_info, errno, nbuf);
-		btrfs_printk(root->fs_info,
-			     "%s:%d: Aborting unused transaction(%s).\n",
-			     function, line, errstr);
+		btrfs_printk(root->fs_info, "Aborting unused transaction.\n");
 		return;
 	}
 	trans->transaction->aborted = errno;
@@ -413,15 +407,7 @@ int btrfs_parse_options(struct btrfs_root *root, char *options)
 			btrfs_set_opt(info->mount_opt, NODATASUM);
 			break;
 		case Opt_nodatacow:
-			if (!btrfs_test_opt(root, COMPRESS) ||
-				!btrfs_test_opt(root, FORCE_COMPRESS)) {
-					printk(KERN_INFO "btrfs: setting nodatacow, compression disabled\n");
-			} else {
-				printk(KERN_INFO "btrfs: setting nodatacow\n");
-			}
-			info->compress_type = BTRFS_COMPRESS_NONE;
-			btrfs_clear_opt(info->mount_opt, COMPRESS);
-			btrfs_clear_opt(info->mount_opt, FORCE_COMPRESS);
+			printk(KERN_INFO "btrfs: setting nodatacow\n");
 			btrfs_set_opt(info->mount_opt, NODATACOW);
 			btrfs_set_opt(info->mount_opt, NODATASUM);
 			break;
@@ -436,14 +422,10 @@ int btrfs_parse_options(struct btrfs_root *root, char *options)
 				compress_type = "zlib";
 				info->compress_type = BTRFS_COMPRESS_ZLIB;
 				btrfs_set_opt(info->mount_opt, COMPRESS);
-				btrfs_clear_opt(info->mount_opt, NODATACOW);
-				btrfs_clear_opt(info->mount_opt, NODATASUM);
 			} else if (strcmp(args[0].from, "lzo") == 0) {
 				compress_type = "lzo";
 				info->compress_type = BTRFS_COMPRESS_LZO;
 				btrfs_set_opt(info->mount_opt, COMPRESS);
-				btrfs_clear_opt(info->mount_opt, NODATACOW);
-				btrfs_clear_opt(info->mount_opt, NODATASUM);
 				btrfs_set_fs_incompat(info, COMPRESS_LZO);
 			} else if (strncmp(args[0].from, "no", 2) == 0) {
 				compress_type = "no";
@@ -561,11 +543,11 @@ int btrfs_parse_options(struct btrfs_root *root, char *options)
 			btrfs_set_opt(info->mount_opt, ENOSPC_DEBUG);
 			break;
 		case Opt_defrag:
-			printk(KERN_INFO "btrfs: enabling auto defrag\n");
+			printk(KERN_INFO "btrfs: enabling auto defrag");
 			btrfs_set_opt(info->mount_opt, AUTO_DEFRAG);
 			break;
 		case Opt_recovery:
-			printk(KERN_INFO "btrfs: enabling auto recovery\n");
+			printk(KERN_INFO "btrfs: enabling auto recovery");
 			btrfs_set_opt(info->mount_opt, RECOVERY);
 			break;
 		case Opt_skip_balance:
@@ -864,15 +846,18 @@ int btrfs_sync_fs(struct super_block *sb, int wait)
 		return 0;
 	}
 
-	btrfs_wait_ordered_extents(root, 0);
+	btrfs_wait_ordered_extents(root, 0, 0);
 
-	trans = btrfs_attach_transaction(root);
-	if (IS_ERR(trans)) {
-		/* no transaction, don't bother */
-		if (PTR_ERR(trans) == -ENOENT)
-			return 0;
-		return PTR_ERR(trans);
+	spin_lock(&fs_info->trans_lock);
+	if (!fs_info->running_transaction) {
+		spin_unlock(&fs_info->trans_lock);
+		return 0;
 	}
+	spin_unlock(&fs_info->trans_lock);
+
+	trans = btrfs_join_transaction(root);
+	if (IS_ERR(trans))
+		return PTR_ERR(trans);
 	return btrfs_commit_transaction(trans, root);
 }
 
@@ -1523,21 +1508,17 @@ static long btrfs_control_ioctl(struct file *file, unsigned int cmd,
 
 static int btrfs_freeze(struct super_block *sb)
 {
-	struct btrfs_trans_handle *trans;
-	struct btrfs_root *root = btrfs_sb(sb)->tree_root;
-
-	trans = btrfs_attach_transaction(root);
-	if (IS_ERR(trans)) {
-		/* no transaction, don't bother */
-		if (PTR_ERR(trans) == -ENOENT)
-			return 0;
-		return PTR_ERR(trans);
-	}
-	return btrfs_commit_transaction(trans, root);
+	struct btrfs_fs_info *fs_info = btrfs_sb(sb);
+	mutex_lock(&fs_info->transaction_kthread_mutex);
+	mutex_lock(&fs_info->cleaner_mutex);
+	return 0;
 }
 
 static int btrfs_unfreeze(struct super_block *sb)
 {
+	struct btrfs_fs_info *fs_info = btrfs_sb(sb);
+	mutex_unlock(&fs_info->cleaner_mutex);
+	mutex_unlock(&fs_info->transaction_kthread_mutex);
 	return 0;
 }
 
@@ -1614,7 +1595,7 @@ static int btrfs_interface_init(void)
 static void btrfs_interface_exit(void)
 {
 	if (misc_deregister(&btrfs_misc) < 0)
-		printk(KERN_INFO "btrfs: misc_deregister failed for control device\n");
+		printk(KERN_INFO "misc_deregister failed for control device");
 }
 
 static int __init init_btrfs_fs(void)
@@ -1639,13 +1620,9 @@ static int __init init_btrfs_fs(void)
 	if (err)
 		goto free_extent_io;
 
-	err = ordered_data_init();
-	if (err)
-		goto free_extent_map;
-
 	err = btrfs_delayed_inode_init();
 	if (err)
-		goto free_ordered_data;
+		goto free_extent_map;
 
 	err = btrfs_interface_init();
 	if (err)
@@ -1664,8 +1641,6 @@ unregister_ioctl:
 	btrfs_interface_exit();
 free_delayed_inode:
 	btrfs_delayed_inode_exit();
-free_ordered_data:
-	ordered_data_exit();
 free_extent_map:
 	extent_map_exit();
 free_extent_io:
@@ -1682,7 +1657,6 @@ static void __exit exit_btrfs_fs(void)
 {
 	btrfs_destroy_cachep();
 	btrfs_delayed_inode_exit();
-	ordered_data_exit();
 	extent_map_exit();
 	extent_io_exit();
 	btrfs_interface_exit();

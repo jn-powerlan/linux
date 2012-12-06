@@ -11,7 +11,6 @@
  * License as published by the Free Software Foundation.
  */
 
-#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
 #include <linux/kernel.h>
 #include <linux/fb.h>
@@ -73,16 +72,18 @@ static int dcon_hw_init(struct dcon_priv *dcon, int is_init)
 
 	ver = dcon_read(dcon, DCON_REG_ID);
 	if ((ver >> 8) != 0xDC) {
-		pr_err("DCON ID not 0xDCxx: 0x%04x instead.\n", ver);
+		printk(KERN_ERR "olpc-dcon:  DCON ID not 0xDCxx: 0x%04x instead.\n",
+			ver);
 		rc = -ENXIO;
 		goto err;
 	}
 
 	if (is_init) {
-		pr_info("Discovered DCON version %x\n", ver & 0xFF);
+		printk(KERN_INFO "olpc-dcon:  Discovered DCON version %x\n",
+				ver & 0xFF);
 		rc = pdata->init(dcon);
 		if (rc != 0) {
-			pr_err("Unable to init.\n");
+			printk(KERN_ERR "olpc-dcon:  Unable to init.\n");
 			goto err;
 		}
 	}
@@ -136,7 +137,8 @@ power_up:
 		x = 1;
 		x = olpc_ec_cmd(0x26, (unsigned char *)&x, 1, NULL, 0);
 		if (x) {
-			pr_warn("unable to force dcon to power up: %d!\n", x);
+			printk(KERN_WARNING "olpc-dcon:  unable to force dcon to power up: %d!\n",
+				x);
 			return x;
 		}
 		msleep(10); /* we'll be conservative */
@@ -149,7 +151,7 @@ power_up:
 		x = dcon_read(dcon, DCON_REG_ID);
 	}
 	if (x < 0) {
-		pr_err("unable to stabilize dcon's smbus, reasserting power and praying.\n");
+		printk(KERN_ERR "olpc-dcon:  unable to stabilize dcon's smbus, reasserting power and praying.\n");
 		BUG_ON(olpc_board_at_least(olpc_board(0xc2)));
 		x = 0;
 		olpc_ec_cmd(0x26, (unsigned char *)&x, 1, NULL, 0);
@@ -220,7 +222,8 @@ static void dcon_sleep(struct dcon_priv *dcon, bool sleep)
 		x = 0;
 		x = olpc_ec_cmd(0x26, (unsigned char *)&x, 1, NULL, 0);
 		if (x)
-			pr_warn("unable to force dcon to power down: %d!\n", x);
+			printk(KERN_WARNING "olpc-dcon:  unable to force dcon to power down: %d!\n",
+				x);
 		else
 			dcon->asleep = sleep;
 	} else {
@@ -229,7 +232,8 @@ static void dcon_sleep(struct dcon_priv *dcon, bool sleep)
 			dcon->disp_mode |= MODE_BL_ENABLE;
 		x = dcon_bus_stabilize(dcon, 1);
 		if (x)
-			pr_warn("unable to reinit dcon hardware: %d!\n", x);
+			printk(KERN_WARNING "olpc-dcon:  unable to reinit dcon hardware: %d!\n",
+				x);
 		else
 			dcon->asleep = sleep;
 
@@ -300,11 +304,12 @@ static void dcon_source_switch(struct work_struct *work)
 
 	switch (source) {
 	case DCON_SOURCE_CPU:
-		pr_info("dcon_source_switch to CPU\n");
+		printk(KERN_INFO "dcon_source_switch to CPU\n");
 		/* Enable the scanline interrupt bit */
 		if (dcon_write(dcon, DCON_REG_MODE,
 				dcon->disp_mode | MODE_SCAN_INT))
-			pr_err("couldn't enable scanline interrupt!\n");
+			printk(KERN_ERR
+			       "olpc-dcon:  couldn't enable scanline interrupt!\n");
 		else {
 			/* Wait up to one second for the scanline interrupt */
 			wait_event_timeout(dcon_wait_queue,
@@ -312,11 +317,11 @@ static void dcon_source_switch(struct work_struct *work)
 		}
 
 		if (!dcon->switched)
-			pr_err("Timeout entering CPU mode; expect a screen glitch.\n");
+			printk(KERN_ERR "olpc-dcon:  Timeout entering CPU mode; expect a screen glitch.\n");
 
 		/* Turn off the scanline interrupt */
 		if (dcon_write(dcon, DCON_REG_MODE, dcon->disp_mode))
-			pr_err("couldn't disable scanline interrupt!\n");
+			printk(KERN_ERR "olpc-dcon:  couldn't disable scanline interrupt!\n");
 
 		/*
 		 * Ideally we'd like to disable interrupts here so that the
@@ -327,7 +332,7 @@ static void dcon_source_switch(struct work_struct *work)
 		 * For now, we just hope..
 		 */
 		if (!dcon_blank_fb(dcon, false)) {
-			pr_err("Failed to enter CPU mode\n");
+			printk(KERN_ERR "olpc-dcon:  Failed to enter CPU mode\n");
 			dcon->pending_src = DCON_SOURCE_DCON;
 			return;
 		}
@@ -336,14 +341,14 @@ static void dcon_source_switch(struct work_struct *work)
 		pdata->set_dconload(1);
 		getnstimeofday(&dcon->load_time);
 
-		pr_info("The CPU has control\n");
+		printk(KERN_INFO "olpc-dcon: The CPU has control\n");
 		break;
 	case DCON_SOURCE_DCON:
 	{
 		int t;
 		struct timespec delta_t;
 
-		pr_info("dcon_source_switch to DCON\n");
+		printk(KERN_INFO "dcon_source_switch to DCON\n");
 
 		add_wait_queue(&dcon_wait_queue, &wait);
 		set_current_state(TASK_UNINTERRUPTIBLE);
@@ -357,7 +362,7 @@ static void dcon_source_switch(struct work_struct *work)
 		set_current_state(TASK_RUNNING);
 
 		if (!dcon->switched) {
-			pr_err("Timeout entering DCON mode; expect a screen glitch.\n");
+			printk(KERN_ERR "olpc-dcon: Timeout entering DCON mode; expect a screen glitch.\n");
 		} else {
 			/* sometimes the DCON doesn't follow its own rules,
 			 * and doesn't wait for two vsync pulses before
@@ -373,7 +378,7 @@ static void dcon_source_switch(struct work_struct *work)
 			delta_t = timespec_sub(dcon->irq_time, dcon->load_time);
 			if (dcon->switched && delta_t.tv_sec == 0 &&
 					delta_t.tv_nsec < NSEC_PER_MSEC * 20) {
-				pr_err("missed loading, retrying\n");
+				printk(KERN_ERR "olpc-dcon: missed loading, retrying\n");
 				pdata->set_dconload(1);
 				mdelay(41);
 				pdata->set_dconload(0);
@@ -383,7 +388,7 @@ static void dcon_source_switch(struct work_struct *work)
 		}
 
 		dcon_blank_fb(dcon, true);
-		pr_info("The DCON has control\n");
+		printk(KERN_INFO "olpc-dcon: The DCON has control\n");
 		break;
 	}
 	default:
@@ -471,7 +476,7 @@ static ssize_t dcon_freeze_store(struct device *dev,
 	if (ret)
 		return ret;
 
-	pr_info("dcon_freeze_store: %lu\n", output);
+	printk(KERN_INFO "dcon_freeze_store: %lu\n", output);
 
 	switch (output) {
 	case 0:
@@ -645,7 +650,7 @@ static int dcon_probe(struct i2c_client *client, const struct i2c_device_id *id)
 	dcon_device = platform_device_alloc("dcon", -1);
 
 	if (dcon_device == NULL) {
-		pr_err("Unable to create the DCON device\n");
+		printk(KERN_ERR "dcon:  Unable to create the DCON device\n");
 		rc = -ENOMEM;
 		goto eirq;
 	}
@@ -653,7 +658,7 @@ static int dcon_probe(struct i2c_client *client, const struct i2c_device_id *id)
 	platform_set_drvdata(dcon_device, dcon);
 
 	if (rc) {
-		pr_err("Unable to add the DCON device\n");
+		printk(KERN_ERR "dcon:  Unable to add the DCON device\n");
 		goto edev;
 	}
 
@@ -757,7 +762,7 @@ irqreturn_t dcon_interrupt(int irq, void *id)
 
 	switch (status & 3) {
 	case 3:
-		pr_debug("DCONLOAD_MISSED interrupt\n");
+		printk(KERN_DEBUG "olpc-dcon: DCONLOAD_MISSED interrupt\n");
 		break;
 
 	case 2:	/* switch to DCON mode */
@@ -779,9 +784,9 @@ irqreturn_t dcon_interrupt(int irq, void *id)
 			dcon->switched = true;
 			getnstimeofday(&dcon->irq_time);
 			wake_up(&dcon_wait_queue);
-			pr_debug("switching w/ status 0/0\n");
+			printk(KERN_DEBUG "olpc-dcon: switching w/ status 0/0\n");
 		} else {
-			pr_debug("scanline interrupt w/CPU\n");
+			printk(KERN_DEBUG "olpc-dcon: scanline interrupt w/CPU\n");
 		}
 	}
 

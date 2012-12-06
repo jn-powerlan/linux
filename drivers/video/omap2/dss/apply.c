@@ -111,6 +111,9 @@ static struct {
 	struct ovl_priv_data ovl_priv_data_array[MAX_DSS_OVERLAYS];
 	struct mgr_priv_data mgr_priv_data_array[MAX_DSS_MANAGERS];
 
+	bool fifo_merge_dirty;
+	bool fifo_merge;
+
 	bool irq_enabled;
 } dss_data;
 
@@ -421,25 +424,17 @@ static void wait_pending_extra_info_updates(void)
 int dss_mgr_wait_for_go(struct omap_overlay_manager *mgr)
 {
 	unsigned long timeout = msecs_to_jiffies(500);
-	struct mgr_priv_data *mp = get_mgr_priv(mgr);
+	struct mgr_priv_data *mp;
 	u32 irq;
-	unsigned long flags;
 	int r;
 	int i;
+	struct omap_dss_device *dssdev = mgr->device;
 
-	spin_lock_irqsave(&data_lock, flags);
-
-	if (mgr_manual_update(mgr)) {
-		spin_unlock_irqrestore(&data_lock, flags);
+	if (!dssdev || dssdev->state != OMAP_DSS_DISPLAY_ACTIVE)
 		return 0;
-	}
 
-	if (!mp->enabled) {
-		spin_unlock_irqrestore(&data_lock, flags);
+	if (mgr_manual_update(mgr))
 		return 0;
-	}
-
-	spin_unlock_irqrestore(&data_lock, flags);
 
 	r = dispc_runtime_get();
 	if (r)
@@ -447,8 +442,10 @@ int dss_mgr_wait_for_go(struct omap_overlay_manager *mgr)
 
 	irq = dispc_mgr_get_vsync_irq(mgr->id);
 
+	mp = get_mgr_priv(mgr);
 	i = 0;
 	while (1) {
+		unsigned long flags;
 		bool shadow_dirty, dirty;
 
 		spin_lock_irqsave(&data_lock, flags);
@@ -492,30 +489,21 @@ int dss_mgr_wait_for_go_ovl(struct omap_overlay *ovl)
 {
 	unsigned long timeout = msecs_to_jiffies(500);
 	struct ovl_priv_data *op;
-	struct mgr_priv_data *mp;
+	struct omap_dss_device *dssdev;
 	u32 irq;
-	unsigned long flags;
 	int r;
 	int i;
 
 	if (!ovl->manager)
 		return 0;
 
-	mp = get_mgr_priv(ovl->manager);
+	dssdev = ovl->manager->device;
 
-	spin_lock_irqsave(&data_lock, flags);
-
-	if (ovl_manual_update(ovl)) {
-		spin_unlock_irqrestore(&data_lock, flags);
+	if (!dssdev || dssdev->state != OMAP_DSS_DISPLAY_ACTIVE)
 		return 0;
-	}
 
-	if (!mp->enabled) {
-		spin_unlock_irqrestore(&data_lock, flags);
+	if (ovl_manual_update(ovl))
 		return 0;
-	}
-
-	spin_unlock_irqrestore(&data_lock, flags);
 
 	r = dispc_runtime_get();
 	if (r)
@@ -526,6 +514,7 @@ int dss_mgr_wait_for_go_ovl(struct omap_overlay *ovl)
 	op = get_ovl_priv(ovl);
 	i = 0;
 	while (1) {
+		unsigned long flags;
 		bool shadow_dirty, dirty;
 
 		spin_lock_irqsave(&data_lock, flags);
@@ -584,7 +573,7 @@ static void dss_ovl_write_regs(struct omap_overlay *ovl)
 
 	replication = dss_ovl_use_replication(mp->lcd_config, oi->color_mode);
 
-	r = dispc_ovl_setup(ovl->id, oi, replication, &mp->timings, false);
+	r = dispc_ovl_setup(ovl->id, oi, replication, &mp->timings);
 	if (r) {
 		/*
 		 * We can't do much here, as this function can be called from
@@ -688,10 +677,39 @@ static void dss_mgr_write_regs_extra(struct omap_overlay_manager *mgr)
 		mp->shadow_extra_info_dirty = true;
 }
 
+static void dss_write_regs_common(void)
+{
+	const int num_mgrs = omap_dss_get_num_overlay_managers();
+	int i;
+
+	if (!dss_data.fifo_merge_dirty)
+		return;
+
+	for (i = 0; i < num_mgrs; ++i) {
+		struct omap_overlay_manager *mgr;
+		struct mgr_priv_data *mp;
+
+		mgr = omap_dss_get_overlay_manager(i);
+		mp = get_mgr_priv(mgr);
+
+		if (mp->enabled) {
+			if (dss_data.fifo_merge_dirty) {
+				dispc_enable_fifomerge(dss_data.fifo_merge);
+				dss_data.fifo_merge_dirty = false;
+			}
+
+			if (mp->updating)
+				mp->shadow_info_dirty = true;
+		}
+	}
+}
+
 static void dss_write_regs(void)
 {
 	const int num_mgrs = omap_dss_get_num_overlay_managers();
 	int i;
+
+	dss_write_regs_common();
 
 	for (i = 0; i < num_mgrs; ++i) {
 		struct omap_overlay_manager *mgr;
@@ -780,6 +798,8 @@ void dss_mgr_start_update(struct omap_overlay_manager *mgr)
 
 	dss_mgr_write_regs(mgr);
 	dss_mgr_write_regs_extra(mgr);
+
+	dss_write_regs_common();
 
 	mp->updating = true;
 
@@ -964,11 +984,20 @@ static void dss_apply_ovl_fifo_thresholds(struct omap_overlay *ovl,
 	op->extra_info_dirty = true;
 }
 
-static void dss_ovl_setup_fifo(struct omap_overlay *ovl)
+static void dss_apply_fifo_merge(bool use_fifo_merge)
+{
+	if (dss_data.fifo_merge == use_fifo_merge)
+		return;
+
+	dss_data.fifo_merge = use_fifo_merge;
+	dss_data.fifo_merge_dirty = true;
+}
+
+static void dss_ovl_setup_fifo(struct omap_overlay *ovl,
+		bool use_fifo_merge)
 {
 	struct ovl_priv_data *op = get_ovl_priv(ovl);
 	u32 fifo_low, fifo_high;
-	bool use_fifo_merge = false;
 
 	if (!op->enabled && !op->enabling)
 		return;
@@ -979,7 +1008,8 @@ static void dss_ovl_setup_fifo(struct omap_overlay *ovl)
 	dss_apply_ovl_fifo_thresholds(ovl, fifo_low, fifo_high);
 }
 
-static void dss_mgr_setup_fifos(struct omap_overlay_manager *mgr)
+static void dss_mgr_setup_fifos(struct omap_overlay_manager *mgr,
+		bool use_fifo_merge)
 {
 	struct omap_overlay *ovl;
 	struct mgr_priv_data *mp;
@@ -990,10 +1020,10 @@ static void dss_mgr_setup_fifos(struct omap_overlay_manager *mgr)
 		return;
 
 	list_for_each_entry(ovl, &mgr->overlays, list)
-		dss_ovl_setup_fifo(ovl);
+		dss_ovl_setup_fifo(ovl, use_fifo_merge);
 }
 
-static void dss_setup_fifos(void)
+static void dss_setup_fifos(bool use_fifo_merge)
 {
 	const int num_mgrs = omap_dss_get_num_overlay_managers();
 	struct omap_overlay_manager *mgr;
@@ -1001,8 +1031,83 @@ static void dss_setup_fifos(void)
 
 	for (i = 0; i < num_mgrs; ++i) {
 		mgr = omap_dss_get_overlay_manager(i);
-		dss_mgr_setup_fifos(mgr);
+		dss_mgr_setup_fifos(mgr, use_fifo_merge);
 	}
+}
+
+static int get_num_used_managers(void)
+{
+	const int num_mgrs = omap_dss_get_num_overlay_managers();
+	struct omap_overlay_manager *mgr;
+	struct mgr_priv_data *mp;
+	int i;
+	int enabled_mgrs;
+
+	enabled_mgrs = 0;
+
+	for (i = 0; i < num_mgrs; ++i) {
+		mgr = omap_dss_get_overlay_manager(i);
+		mp = get_mgr_priv(mgr);
+
+		if (!mp->enabled)
+			continue;
+
+		enabled_mgrs++;
+	}
+
+	return enabled_mgrs;
+}
+
+static int get_num_used_overlays(void)
+{
+	const int num_ovls = omap_dss_get_num_overlays();
+	struct omap_overlay *ovl;
+	struct ovl_priv_data *op;
+	struct mgr_priv_data *mp;
+	int i;
+	int enabled_ovls;
+
+	enabled_ovls = 0;
+
+	for (i = 0; i < num_ovls; ++i) {
+		ovl = omap_dss_get_overlay(i);
+		op = get_ovl_priv(ovl);
+
+		if (!op->enabled && !op->enabling)
+			continue;
+
+		mp = get_mgr_priv(ovl->manager);
+
+		if (!mp->enabled)
+			continue;
+
+		enabled_ovls++;
+	}
+
+	return enabled_ovls;
+}
+
+static bool get_use_fifo_merge(void)
+{
+	int enabled_mgrs = get_num_used_managers();
+	int enabled_ovls = get_num_used_overlays();
+
+	if (!dss_has_feature(FEAT_FIFO_MERGE))
+		return false;
+
+	/*
+	 * In theory the only requirement for fifomerge is enabled_ovls <= 1.
+	 * However, if we have two managers enabled and set/unset the fifomerge,
+	 * we need to set the GO bits in particular sequence for the managers,
+	 * and wait in between.
+	 *
+	 * This is rather difficult as new apply calls can happen at any time,
+	 * so we simplify the problem by requiring also that enabled_mgrs <= 1.
+	 * In practice this shouldn't matter, because when only one overlay is
+	 * enabled, most likely only one output is enabled.
+	 */
+
+	return enabled_mgrs <= 1 && enabled_ovls <= 1;
 }
 
 int dss_mgr_enable(struct omap_overlay_manager *mgr)
@@ -1010,6 +1115,7 @@ int dss_mgr_enable(struct omap_overlay_manager *mgr)
 	struct mgr_priv_data *mp = get_mgr_priv(mgr);
 	unsigned long flags;
 	int r;
+	bool fifo_merge;
 
 	mutex_lock(&apply_lock);
 
@@ -1027,10 +1133,22 @@ int dss_mgr_enable(struct omap_overlay_manager *mgr)
 		goto err;
 	}
 
-	dss_setup_fifos();
+	/* step 1: setup fifos/fifomerge before enabling the manager */
+
+	fifo_merge = get_use_fifo_merge();
+	dss_setup_fifos(fifo_merge);
+	dss_apply_fifo_merge(fifo_merge);
 
 	dss_write_regs();
 	dss_set_go_bits();
+
+	spin_unlock_irqrestore(&data_lock, flags);
+
+	/* wait until fifo config is in */
+	wait_pending_extra_info_updates();
+
+	/* step 2: enable the manager */
+	spin_lock_irqsave(&data_lock, flags);
 
 	if (!mgr_manual_update(mgr))
 		mp->updating = true;
@@ -1056,6 +1174,7 @@ void dss_mgr_disable(struct omap_overlay_manager *mgr)
 {
 	struct mgr_priv_data *mp = get_mgr_priv(mgr);
 	unsigned long flags;
+	bool fifo_merge;
 
 	mutex_lock(&apply_lock);
 
@@ -1070,8 +1189,16 @@ void dss_mgr_disable(struct omap_overlay_manager *mgr)
 	mp->updating = false;
 	mp->enabled = false;
 
+	fifo_merge = get_use_fifo_merge();
+	dss_setup_fifos(fifo_merge);
+	dss_apply_fifo_merge(fifo_merge);
+
+	dss_write_regs();
+	dss_set_go_bits();
+
 	spin_unlock_irqrestore(&data_lock, flags);
 
+	wait_pending_extra_info_updates();
 out:
 	mutex_unlock(&apply_lock);
 }
@@ -1110,29 +1237,29 @@ void dss_mgr_get_info(struct omap_overlay_manager *mgr,
 	spin_unlock_irqrestore(&data_lock, flags);
 }
 
-int dss_mgr_set_output(struct omap_overlay_manager *mgr,
-		struct omap_dss_output *output)
+int dss_mgr_set_device(struct omap_overlay_manager *mgr,
+		struct omap_dss_device *dssdev)
 {
 	int r;
 
 	mutex_lock(&apply_lock);
 
-	if (mgr->output) {
-		DSSERR("manager %s is already connected to an output\n",
-			mgr->name);
+	if (dssdev->manager) {
+		DSSERR("display '%s' already has a manager '%s'\n",
+			       dssdev->name, dssdev->manager->name);
 		r = -EINVAL;
 		goto err;
 	}
 
-	if ((mgr->supported_outputs & output->id) == 0) {
-		DSSERR("output does not support manager %s\n",
-			mgr->name);
+	if ((mgr->supported_displays & dssdev->type) == 0) {
+		DSSERR("display '%s' does not support manager '%s'\n",
+			       dssdev->name, mgr->name);
 		r = -EINVAL;
 		goto err;
 	}
 
-	output->manager = mgr;
-	mgr->output = output;
+	dssdev->manager = mgr;
+	mgr->device = dssdev;
 
 	mutex_unlock(&apply_lock);
 
@@ -1142,46 +1269,40 @@ err:
 	return r;
 }
 
-int dss_mgr_unset_output(struct omap_overlay_manager *mgr)
+int dss_mgr_unset_device(struct omap_overlay_manager *mgr)
 {
 	int r;
-	struct mgr_priv_data *mp = get_mgr_priv(mgr);
-	unsigned long flags;
 
 	mutex_lock(&apply_lock);
 
-	if (!mgr->output) {
-		DSSERR("failed to unset output, output not set\n");
+	if (!mgr->device) {
+		DSSERR("failed to unset display, display not set.\n");
 		r = -EINVAL;
 		goto err;
 	}
 
-	spin_lock_irqsave(&data_lock, flags);
-
-	if (mp->enabled) {
-		DSSERR("output can't be unset when manager is enabled\n");
+	/*
+	 * Don't allow currently enabled displays to have the overlay manager
+	 * pulled out from underneath them
+	 */
+	if (mgr->device->state != OMAP_DSS_DISPLAY_DISABLED) {
 		r = -EINVAL;
-		goto err1;
+		goto err;
 	}
 
-	spin_unlock_irqrestore(&data_lock, flags);
-
-	mgr->output->manager = NULL;
-	mgr->output = NULL;
+	mgr->device->manager = NULL;
+	mgr->device = NULL;
 
 	mutex_unlock(&apply_lock);
 
 	return 0;
-err1:
-	spin_unlock_irqrestore(&data_lock, flags);
 err:
 	mutex_unlock(&apply_lock);
-
 	return r;
 }
 
 static void dss_apply_mgr_timings(struct omap_overlay_manager *mgr,
-		const struct omap_video_timings *timings)
+		struct omap_video_timings *timings)
 {
 	struct mgr_priv_data *mp = get_mgr_priv(mgr);
 
@@ -1190,22 +1311,24 @@ static void dss_apply_mgr_timings(struct omap_overlay_manager *mgr,
 }
 
 void dss_mgr_set_timings(struct omap_overlay_manager *mgr,
-		const struct omap_video_timings *timings)
+		struct omap_video_timings *timings)
 {
 	unsigned long flags;
-	struct mgr_priv_data *mp = get_mgr_priv(mgr);
+
+	mutex_lock(&apply_lock);
 
 	spin_lock_irqsave(&data_lock, flags);
 
-	if (mp->updating) {
-		DSSERR("cannot set timings for %s: manager needs to be disabled\n",
-			mgr->name);
-		goto out;
-	}
-
 	dss_apply_mgr_timings(mgr, timings);
-out:
+
+	dss_write_regs();
+	dss_set_go_bits();
+
 	spin_unlock_irqrestore(&data_lock, flags);
+
+	wait_pending_extra_info_updates();
+
+	mutex_unlock(&apply_lock);
 }
 
 static void dss_apply_mgr_lcd_config(struct omap_overlay_manager *mgr,
@@ -1223,7 +1346,7 @@ void dss_mgr_set_lcd_config(struct omap_overlay_manager *mgr,
 	unsigned long flags;
 	struct mgr_priv_data *mp = get_mgr_priv(mgr);
 
-	spin_lock_irqsave(&data_lock, flags);
+	mutex_lock(&apply_lock);
 
 	if (mp->enabled) {
 		DSSERR("cannot apply lcd config for %s: manager needs to be disabled\n",
@@ -1231,9 +1354,19 @@ void dss_mgr_set_lcd_config(struct omap_overlay_manager *mgr,
 		goto out;
 	}
 
+	spin_lock_irqsave(&data_lock, flags);
+
 	dss_apply_mgr_lcd_config(mgr, config);
-out:
+
+	dss_write_regs();
+	dss_set_go_bits();
+
 	spin_unlock_irqrestore(&data_lock, flags);
+
+	wait_pending_extra_info_updates();
+
+out:
+	mutex_unlock(&apply_lock);
 }
 
 int dss_ovl_set_info(struct omap_overlay *ovl,
@@ -1350,13 +1483,6 @@ int dss_ovl_unset_manager(struct omap_overlay *ovl)
 		goto err;
 	}
 
-	spin_unlock_irqrestore(&data_lock, flags);
-
-	/* wait for pending extra_info updates to ensure the ovl is disabled */
-	wait_pending_extra_info_updates();
-
-	spin_lock_irqsave(&data_lock, flags);
-
 	op->channel = -1;
 
 	ovl->manager = NULL;
@@ -1391,6 +1517,7 @@ int dss_ovl_enable(struct omap_overlay *ovl)
 {
 	struct ovl_priv_data *op = get_ovl_priv(ovl);
 	unsigned long flags;
+	bool fifo_merge;
 	int r;
 
 	mutex_lock(&apply_lock);
@@ -1400,7 +1527,7 @@ int dss_ovl_enable(struct omap_overlay *ovl)
 		goto err1;
 	}
 
-	if (ovl->manager == NULL || ovl->manager->output == NULL) {
+	if (ovl->manager == NULL || ovl->manager->device == NULL) {
 		r = -EINVAL;
 		goto err1;
 	}
@@ -1416,7 +1543,22 @@ int dss_ovl_enable(struct omap_overlay *ovl)
 		goto err2;
 	}
 
-	dss_setup_fifos();
+	/* step 1: configure fifos/fifomerge for currently enabled ovls */
+
+	fifo_merge = get_use_fifo_merge();
+	dss_setup_fifos(fifo_merge);
+	dss_apply_fifo_merge(fifo_merge);
+
+	dss_write_regs();
+	dss_set_go_bits();
+
+	spin_unlock_irqrestore(&data_lock, flags);
+
+	/* wait for fifo configs to go in */
+	wait_pending_extra_info_updates();
+
+	/* step 2: enable the overlay */
+	spin_lock_irqsave(&data_lock, flags);
 
 	op->enabling = false;
 	dss_apply_ovl_enable(ovl, true);
@@ -1425,6 +1567,9 @@ int dss_ovl_enable(struct omap_overlay *ovl)
 	dss_set_go_bits();
 
 	spin_unlock_irqrestore(&data_lock, flags);
+
+	/* wait for overlay to be enabled */
+	wait_pending_extra_info_updates();
 
 	mutex_unlock(&apply_lock);
 
@@ -1441,6 +1586,7 @@ int dss_ovl_disable(struct omap_overlay *ovl)
 {
 	struct ovl_priv_data *op = get_ovl_priv(ovl);
 	unsigned long flags;
+	bool fifo_merge;
 	int r;
 
 	mutex_lock(&apply_lock);
@@ -1450,18 +1596,38 @@ int dss_ovl_disable(struct omap_overlay *ovl)
 		goto err;
 	}
 
-	if (ovl->manager == NULL || ovl->manager->output == NULL) {
+	if (ovl->manager == NULL || ovl->manager->device == NULL) {
 		r = -EINVAL;
 		goto err;
 	}
 
+	/* step 1: disable the overlay */
 	spin_lock_irqsave(&data_lock, flags);
 
 	dss_apply_ovl_enable(ovl, false);
+
 	dss_write_regs();
 	dss_set_go_bits();
 
 	spin_unlock_irqrestore(&data_lock, flags);
+
+	/* wait for the overlay to be disabled */
+	wait_pending_extra_info_updates();
+
+	/* step 2: configure fifos/fifomerge */
+	spin_lock_irqsave(&data_lock, flags);
+
+	fifo_merge = get_use_fifo_merge();
+	dss_setup_fifos(fifo_merge);
+	dss_apply_fifo_merge(fifo_merge);
+
+	dss_write_regs();
+	dss_set_go_bits();
+
+	spin_unlock_irqrestore(&data_lock, flags);
+
+	/* wait for fifo config to go in */
+	wait_pending_extra_info_updates();
 
 	mutex_unlock(&apply_lock);
 

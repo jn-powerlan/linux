@@ -149,8 +149,8 @@ struct hfsplus_sb_info {
 	u32 type;
 
 	umode_t umask;
-	kuid_t uid;
-	kgid_t gid;
+	uid_t uid;
+	gid_t gid;
 
 	int part, session;
 	unsigned long flags;

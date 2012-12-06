@@ -313,7 +313,7 @@ out_cleanup:
 		printk(KERN_WARNING "Error while testing ring sync (%d).\n", r);
 }
 
-static void radeon_test_ring_sync2(struct radeon_device *rdev,
+void radeon_test_ring_sync2(struct radeon_device *rdev,
 			    struct radeon_ring *ringA,
 			    struct radeon_ring *ringB,
 			    struct radeon_ring *ringC)

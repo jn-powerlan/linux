@@ -32,31 +32,23 @@
 #include "hyperv_net.h"
 
 
-#define RNDIS_EXT_LEN 100
 struct rndis_request {
 	struct list_head list_ent;
 	struct completion  wait_event;
 
-	struct rndis_message response_msg;
 	/*
-	 * The buffer for extended info after the RNDIS response message. It's
-	 * referenced based on the data offset in the RNDIS message. Its size
-	 * is enough for current needs, and should be sufficient for the near
-	 * future.
+	 * FIXME: We assumed a fixed size response here. If we do ever need to
+	 * handle a bigger response, we can either define a max response
+	 * message or add a response buffer variable above this field
 	 */
-	u8 response_ext[RNDIS_EXT_LEN];
+	struct rndis_message response_msg;
 
 	/* Simplify allocation by having a netvsc packet inline */
 	struct hv_netvsc_packet	pkt;
-	/* Set 2 pages for rndis requests crossing page boundary */
-	struct hv_page_buffer buf[2];
-
+	struct hv_page_buffer buf;
+	/* FIXME: We assumed a fixed size request here. */
 	struct rndis_message request_msg;
-	/*
-	 * The buffer for the extended info after the RNDIS request message.
-	 * It is referenced and sized in a similar way as response_ext.
-	 */
-	u8 request_ext[RNDIS_EXT_LEN];
+	u8 ext[100];
 };
 
 static void rndis_filter_send_completion(void *ctx);
@@ -229,18 +221,6 @@ static int rndis_filter_send_request(struct rndis_device *dev,
 	packet->page_buf[0].offset =
 		(unsigned long)&req->request_msg & (PAGE_SIZE - 1);
 
-	/* Add one page_buf when request_msg crossing page boundary */
-	if (packet->page_buf[0].offset + packet->page_buf[0].len > PAGE_SIZE) {
-		packet->page_buf_cnt++;
-		packet->page_buf[0].len = PAGE_SIZE -
-			packet->page_buf[0].offset;
-		packet->page_buf[1].pfn = virt_to_phys((void *)&req->request_msg
-			+ packet->page_buf[0].len) >> PAGE_SHIFT;
-		packet->page_buf[1].offset = 0;
-		packet->page_buf[1].len = req->request_msg.msg_len -
-			packet->page_buf[0].len;
-	}
-
 	packet->completion.send.send_completion_ctx = req;/* packet; */
 	packet->completion.send.send_completion =
 		rndis_filter_send_request_completion;
@@ -275,8 +255,7 @@ static void rndis_filter_receive_response(struct rndis_device *dev,
 	spin_unlock_irqrestore(&dev->request_lock, flags);
 
 	if (found) {
-		if (resp->msg_len <=
-		    sizeof(struct rndis_message) + RNDIS_EXT_LEN) {
+		if (resp->msg_len <= sizeof(struct rndis_message)) {
 			memcpy(&request->response_msg, resp,
 			       resp->msg_len);
 		} else {
@@ -413,12 +392,9 @@ int rndis_filter_receive(struct hv_device *dev,
 	struct rndis_device *rndis_dev;
 	struct rndis_message *rndis_msg;
 	struct net_device *ndev;
-	int ret = 0;
 
-	if (!net_dev) {
-		ret = -EINVAL;
-		goto exit;
-	}
+	if (!net_dev)
+		return -EINVAL;
 
 	ndev = net_dev->ndev;
 
@@ -426,16 +402,14 @@ int rndis_filter_receive(struct hv_device *dev,
 	if (!net_dev->extension) {
 		netdev_err(ndev, "got rndis message but no rndis device - "
 			  "dropping this message!\n");
-		ret = -ENODEV;
-		goto exit;
+		return -ENODEV;
 	}
 
 	rndis_dev = (struct rndis_device *)net_dev->extension;
 	if (rndis_dev->state == RNDIS_DEV_UNINITIALIZED) {
 		netdev_err(ndev, "got rndis message but rndis device "
 			   "uninitialized...dropping this message!\n");
-		ret = -ENODEV;
-		goto exit;
+		return -ENODEV;
 	}
 
 	rndis_msg = pkt->data;
@@ -467,11 +441,7 @@ int rndis_filter_receive(struct hv_device *dev,
 		break;
 	}
 
-exit:
-	if (ret != 0)
-		pkt->status = NVSP_STAT_FAIL;
-
-	return ret;
+	return 0;
 }
 
 static int rndis_filter_query_device(struct rndis_device *dev, u32 oid,
@@ -671,7 +641,6 @@ int rndis_filter_set_packet_filter(struct rndis_device *dev, u32 new_filter)
 	if (t == 0) {
 		netdev_err(ndev,
 			"timeout before we got a set response...\n");
-		ret = -ETIMEDOUT;
 		/*
 		 * We can't deallocate the request since we may still receive a
 		 * send completion for it.
@@ -709,7 +678,8 @@ static int rndis_filter_init_device(struct rndis_device *dev)
 	init = &request->request_msg.msg.init_req;
 	init->major_ver = RNDIS_MAJOR_VERSION;
 	init->minor_ver = RNDIS_MINOR_VERSION;
-	init->max_xfer_size = 0x4000;
+	/* FIXME: Use 1536 - rounded ethernet frame size */
+	init->max_xfer_size = 2048;
 
 	dev->state = RNDIS_DEV_INITIALIZING;
 

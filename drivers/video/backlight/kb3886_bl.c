@@ -34,9 +34,9 @@ static void kb3886_bl_set_intensity(int intensity)
 	mutex_lock(&bl_mutex);
 	intensity = intensity&0xff;
 	outb(KB3886_ADC_DAC_PWM, KB3886_PARENT);
-	usleep_range(10000, 11000);
+	msleep(10);
 	outb(KB3886_PWM0_WRITE, KB3886_IO);
-	usleep_range(10000, 11000);
+	msleep(10);
 	outb(intensity, KB3886_IO);
 	mutex_unlock(&bl_mutex);
 }

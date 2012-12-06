@@ -117,8 +117,8 @@ int perf_target__strerror(struct perf_target *target, int errnum,
 
 		if (err != buf) {
 			size_t len = strlen(err);
-			memcpy(buf, err, min(buflen - 1, len));
-			*(buf + min(buflen - 1, len)) = '\0';
+			char *c = mempcpy(buf, err, min(buflen - 1, len));
+			*c = '\0';
 		}
 
 		return 0;

@@ -73,12 +73,12 @@
 
 #define BBvClearFOE(dwIoBase)                               \
 {                                                           \
-    BBbWriteEmbedded(dwIoBase, 0xB1, 0);                     \
+    BBbWriteEmbeded(dwIoBase, 0xB1, 0);                     \
 }
 
 #define BBvSetFOE(dwIoBase)                                 \
 {                                                           \
-    BBbWriteEmbedded(dwIoBase, 0xB1, 0x0C);                  \
+    BBbWriteEmbeded(dwIoBase, 0xB1, 0x0C);                  \
 }
 
 
@@ -97,7 +97,7 @@ BBuGetFrameTime(
     );
 
 void
-BBvCalculateParameter (
+BBvCaculateParameter (
     PSDevice pDevice,
     unsigned int cbFrameLength,
     unsigned short wRate,
@@ -107,8 +107,8 @@ BBvCalculateParameter (
     unsigned char *pbyPhySgn
     );
 
-bool BBbReadEmbedded(unsigned long dwIoBase, unsigned char byBBAddr, unsigned char *pbyData);
-bool BBbWriteEmbedded(unsigned long dwIoBase, unsigned char byBBAddr, unsigned char byData);
+bool BBbReadEmbeded(unsigned long dwIoBase, unsigned char byBBAddr, unsigned char *pbyData);
+bool BBbWriteEmbeded(unsigned long dwIoBase, unsigned char byBBAddr, unsigned char byData);
 
 void BBvReadAllRegs(unsigned long dwIoBase, unsigned char *pbyBBRegs);
 void BBvLoopbackOn(PSDevice pDevice);

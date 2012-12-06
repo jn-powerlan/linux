@@ -2352,19 +2352,24 @@ DEBUGFS_READ_WRITE_FILE_OPS(calib_disabled);
  * Create the debugfs files and directories
  *
  */
-int iwl_dbgfs_register(struct iwl_priv *priv, struct dentry *dbgfs_dir)
+int iwl_dbgfs_register(struct iwl_priv *priv, const char *name)
 {
-	struct dentry *dir_data, *dir_rf, *dir_debug;
+	struct dentry *phyd = priv->hw->wiphy->debugfsdir;
+	struct dentry *dir_drv, *dir_data, *dir_rf, *dir_debug;
 
-	priv->debugfs_dir = dbgfs_dir;
+	dir_drv = debugfs_create_dir(name, phyd);
+	if (!dir_drv)
+		return -ENOMEM;
 
-	dir_data = debugfs_create_dir("data", dbgfs_dir);
+	priv->debugfs_dir = dir_drv;
+
+	dir_data = debugfs_create_dir("data", dir_drv);
 	if (!dir_data)
 		goto err;
-	dir_rf = debugfs_create_dir("rf", dbgfs_dir);
+	dir_rf = debugfs_create_dir("rf", dir_drv);
 	if (!dir_rf)
 		goto err;
-	dir_debug = debugfs_create_dir("debug", dbgfs_dir);
+	dir_debug = debugfs_create_dir("debug", dir_drv);
 	if (!dir_debug)
 		goto err;
 
@@ -2410,30 +2415,25 @@ int iwl_dbgfs_register(struct iwl_priv *priv, struct dentry *dbgfs_dir)
 	/* Calibrations disabled/enabled status*/
 	DEBUGFS_ADD_FILE(calib_disabled, dir_rf, S_IWUSR | S_IRUSR);
 
-	/*
-	 * Create a symlink with mac80211. This is not very robust, as it does
-	 * not remove the symlink created. The implicit assumption is that
-	 * when the opmode exits, mac80211 will also exit, and will remove
-	 * this symlink as part of its cleanup.
-	 */
-	if (priv->mac80211_registered) {
-		char buf[100];
-		struct dentry *mac80211_dir, *dev_dir, *root_dir;
-
-		dev_dir = dbgfs_dir->d_parent;
-		root_dir = dev_dir->d_parent;
-		mac80211_dir = priv->hw->wiphy->debugfsdir;
-
-		snprintf(buf, 100, "../../%s/%s", root_dir->d_name.name,
-			 dev_dir->d_name.name);
-
-		if (!debugfs_create_symlink("iwlwifi", mac80211_dir, buf))
-			goto err;
-	}
-
+	if (iwl_trans_dbgfs_register(priv->trans, dir_debug))
+		goto err;
 	return 0;
 
 err:
-	IWL_ERR(priv, "failed to create the dvm debugfs entries\n");
+	IWL_ERR(priv, "Can't create the debugfs directory\n");
+	iwl_dbgfs_unregister(priv);
 	return -ENOMEM;
+}
+
+/**
+ * Remove the debugfs files and directories
+ *
+ */
+void iwl_dbgfs_unregister(struct iwl_priv *priv)
+{
+	if (!priv->debugfs_dir)
+		return;
+
+	debugfs_remove_recursive(priv->debugfs_dir);
+	priv->debugfs_dir = NULL;
 }

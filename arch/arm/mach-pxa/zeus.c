@@ -38,14 +38,14 @@
 
 #include <mach/pxa27x.h>
 #include <mach/regs-uart.h>
-#include <linux/platform_data/usb-ohci-pxa27x.h>
-#include <linux/platform_data/mmc-pxamci.h>
+#include <mach/ohci.h>
+#include <mach/mmc.h>
 #include <mach/pxa27x-udc.h>
 #include <mach/udc.h>
-#include <linux/platform_data/video-pxafb.h>
+#include <mach/pxafb.h>
 #include <mach/pm.h>
 #include <mach/audio.h>
-#include <linux/platform_data/pcmcia-pxa2xx_viper.h>
+#include <mach/arcom-pcmcia.h>
 #include <mach/zeus.h>
 #include <mach/smemc.h>
 

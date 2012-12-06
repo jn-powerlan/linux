@@ -1509,8 +1509,7 @@ xfs_ifree_cluster(
 		 * to mark all the active inodes on the buffer stale.
 		 */
 		bp = xfs_trans_get_buf(tp, mp->m_ddev_targp, blkno,
-					mp->m_bsize * blks_per_cluster,
-					XBF_UNMAPPED);
+					mp->m_bsize * blks_per_cluster, 0);
 
 		if (!bp)
 			return ENOMEM;

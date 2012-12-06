@@ -162,6 +162,7 @@ mach-types.h
 machtypes.h
 map
 map_hugetlb
+maui_boot.h
 media
 mconf
 miboot*

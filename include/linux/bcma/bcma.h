@@ -10,7 +10,7 @@
 #include <linux/bcma/bcma_driver_gmac_cmn.h>
 #include <linux/ssb/ssb.h> /* SPROM sharing */
 
-#include <linux/bcma/bcma_regs.h>
+#include "bcma_regs.h"
 
 struct bcma_device;
 struct bcma_bus;

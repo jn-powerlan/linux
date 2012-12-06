@@ -1071,7 +1071,23 @@ static struct i2c_driver wm8955_i2c_driver = {
 	.id_table = wm8955_i2c_id,
 };
 
-module_i2c_driver(wm8955_i2c_driver);
+static int __init wm8955_modinit(void)
+{
+	int ret = 0;
+	ret = i2c_add_driver(&wm8955_i2c_driver);
+	if (ret != 0) {
+		printk(KERN_ERR "Failed to register WM8955 I2C driver: %d\n",
+		       ret);
+	}
+	return ret;
+}
+module_init(wm8955_modinit);
+
+static void __exit wm8955_exit(void)
+{
+	i2c_del_driver(&wm8955_i2c_driver);
+}
+module_exit(wm8955_exit);
 
 MODULE_DESCRIPTION("ASoC WM8955 driver");
 MODULE_AUTHOR("Mark Brown <broonie@opensource.wolfsonmicro.com>");

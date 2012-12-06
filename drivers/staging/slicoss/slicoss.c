@@ -514,7 +514,8 @@ static int slic_card_download_gbrcv(struct adapter *adapter)
 		file = "slicoss/gbrcvucode.sys";
 		break;
 	default:
-		return -ENOENT;
+		ASSERT(0);
+		break;
 	}
 
 	ret = request_firmware(&fw, file, &adapter->pcidev->dev);
@@ -528,16 +529,15 @@ static int slic_card_download_gbrcv(struct adapter *adapter)
 	index += 4;
 	switch (adapter->devid) {
 	case SLIC_2GB_DEVICE_ID:
-		if (rcvucodelen != OasisRcvUCodeLen) {
-			release_firmware(fw);
+		if (rcvucodelen != OasisRcvUCodeLen)
 			return -EINVAL;
-		}
 		break;
 	case SLIC_1GB_DEVICE_ID:
-		if (rcvucodelen != GBRcvUCodeLen) {
-			release_firmware(fw);
+		if (rcvucodelen != GBRcvUCodeLen)
 			return -EINVAL;
-		}
+		break;
+	default:
+		ASSERT(0);
 		break;
 	}
 	/* start download */
@@ -2552,6 +2552,7 @@ static void slic_mcast_set_list(struct net_device *dev)
 		if (status == 0)
 			slic_mcast_set_mask(adapter);
 	}
+	return;
 }
 
 #define  XMIT_FAIL_LINK_STATE               1
@@ -3131,6 +3132,7 @@ static int slic_entry_open(struct net_device *dev)
 {
 	struct adapter *adapter = netdev_priv(dev);
 	struct sliccard *card = adapter->card;
+	u32 locked = 0;
 	int status;
 
 	ASSERT(adapter);
@@ -3140,6 +3142,7 @@ static int slic_entry_open(struct net_device *dev)
 
 	spin_lock_irqsave(&slic_global.driver_lock.lock,
 				slic_global.driver_lock.flags);
+	locked = 1;
 	if (!adapter->activated) {
 		card->adapters_activated++;
 		slic_global.num_slic_ports_active++;
@@ -3153,15 +3156,23 @@ static int slic_entry_open(struct net_device *dev)
 			slic_global.num_slic_ports_active--;
 			adapter->activated = 0;
 		}
-		goto spin_unlock;
+		if (locked) {
+			spin_unlock_irqrestore(&slic_global.driver_lock.lock,
+						slic_global.driver_lock.flags);
+			locked = 0;
+		}
+		return status;
 	}
 	if (!card->master)
 		card->master = adapter;
 
-spin_unlock:
-	spin_unlock_irqrestore(&slic_global.driver_lock.lock,
-			       slic_global.driver_lock.flags);
-	return status;
+	if (locked) {
+		spin_unlock_irqrestore(&slic_global.driver_lock.lock,
+					slic_global.driver_lock.flags);
+		locked = 0;
+	}
+
+	return 0;
 }
 
 static void slic_card_cleanup(struct sliccard *card)
@@ -3701,8 +3712,9 @@ static void slic_init_adapter(struct net_device *netdev,
 					phys_shmem);
 	ASSERT(adapter->pshmem);
 
-	if (adapter->pshmem)
-		memset(adapter->pshmem, 0, sizeof(struct slic_shmem));
+	memset(adapter->pshmem, 0, sizeof(struct slic_shmem));
+
+	return;
 }
 
 static const struct net_device_ops slic_netdev_ops = {

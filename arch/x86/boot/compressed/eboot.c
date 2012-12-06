@@ -278,9 +278,8 @@ static efi_status_t setup_gop(struct screen_info *si, efi_guid_t *proto,
 	nr_gops = size / sizeof(void *);
 	for (i = 0; i < nr_gops; i++) {
 		struct efi_graphics_output_mode_info *info;
-		efi_guid_t conout_proto = EFI_CONSOLE_OUT_DEVICE_GUID;
-		bool conout_found = false;
-		void *dummy;
+		efi_guid_t pciio_proto = EFI_PCI_IO_PROTOCOL_GUID;
+		void *pciio;
 		void *h = gop_handle[i];
 
 		status = efi_call_phys3(sys_table->boottime->handle_protocol,
@@ -288,21 +287,19 @@ static efi_status_t setup_gop(struct screen_info *si, efi_guid_t *proto,
 		if (status != EFI_SUCCESS)
 			continue;
 
-		status = efi_call_phys3(sys_table->boottime->handle_protocol,
-					h, &conout_proto, &dummy);
-
-		if (status == EFI_SUCCESS)
-			conout_found = true;
+		efi_call_phys3(sys_table->boottime->handle_protocol,
+			       h, &pciio_proto, &pciio);
 
 		status = efi_call_phys4(gop->query_mode, gop,
 					gop->mode->mode, &size, &info);
-		if (status == EFI_SUCCESS && (!first_gop || conout_found)) {
+		if (status == EFI_SUCCESS && (!first_gop || pciio)) {
 			/*
-			 * Systems that use the UEFI Console Splitter may
-			 * provide multiple GOP devices, not all of which are
-			 * backed by real hardware. The workaround is to search
-			 * for a GOP implementing the ConOut protocol, and if
-			 * one isn't found, to just fall back to the first GOP.
+			 * Apple provide GOPs that are not backed by
+			 * real hardware (they're used to handle
+			 * multiple displays). The workaround is to
+			 * search for a GOP implementing the PCIIO
+			 * protocol, and if one isn't found, to just
+			 * fallback to the first GOP.
 			 */
 			width = info->horizontal_resolution;
 			height = info->vertical_resolution;
@@ -313,10 +310,10 @@ static efi_status_t setup_gop(struct screen_info *si, efi_guid_t *proto,
 			pixels_per_scan_line = info->pixels_per_scan_line;
 
 			/*
-			 * Once we've found a GOP supporting ConOut,
+			 * Once we've found a GOP supporting PCIIO,
 			 * don't bother looking any further.
 			 */
-			if (conout_found)
+			if (pciio)
 				break;
 
 			first_gop = gop;
@@ -333,6 +330,7 @@ static efi_status_t setup_gop(struct screen_info *si, efi_guid_t *proto,
 	si->lfb_width = width;
 	si->lfb_height = height;
 	si->lfb_base = fb_base;
+	si->lfb_size = fb_size;
 	si->pages = 1;
 
 	if (pixel_format == PIXEL_RGB_RESERVED_8BIT_PER_COLOR) {
@@ -379,10 +377,6 @@ static efi_status_t setup_gop(struct screen_info *si, efi_guid_t *proto,
 		si->rsvd_size = 0;
 		si->rsvd_pos = 0;
 	}
-
-	si->lfb_size = si->lfb_linelength * si->lfb_height;
-
-	si->capabilities |= VIDEO_CAPABILITY_SKIP_QUIRKS;
 
 free_handle:
 	efi_call_phys1(sys_table->boottime->free_pool, gop_handle);

@@ -203,17 +203,23 @@ void mesh_path_assign_nexthop(struct mesh_path *mpath, struct sta_info *sta)
 {
 	struct sk_buff *skb;
 	struct ieee80211_hdr *hdr;
+	struct sk_buff_head tmpq;
 	unsigned long flags;
 
 	rcu_assign_pointer(mpath->next_hop, sta);
 
+	__skb_queue_head_init(&tmpq);
+
 	spin_lock_irqsave(&mpath->frame_queue.lock, flags);
-	skb_queue_walk(&mpath->frame_queue, skb) {
+
+	while ((skb = __skb_dequeue(&mpath->frame_queue)) != NULL) {
 		hdr = (struct ieee80211_hdr *) skb->data;
 		memcpy(hdr->addr1, sta->sta.addr, ETH_ALEN);
 		memcpy(hdr->addr2, mpath->sdata->vif.addr, ETH_ALEN);
+		__skb_queue_tail(&tmpq, skb);
 	}
 
+	skb_queue_splice(&tmpq, &mpath->frame_queue);
 	spin_unlock_irqrestore(&mpath->frame_queue.lock, flags);
 }
 
@@ -279,42 +285,40 @@ static void mesh_path_move_to_queue(struct mesh_path *gate_mpath,
 				    struct mesh_path *from_mpath,
 				    bool copy)
 {
-	struct sk_buff *skb, *fskb, *tmp;
-	struct sk_buff_head failq;
+	struct sk_buff *skb, *cp_skb = NULL;
+	struct sk_buff_head gateq, failq;
 	unsigned long flags;
+	int num_skbs;
 
 	BUG_ON(gate_mpath == from_mpath);
 	BUG_ON(!gate_mpath->next_hop);
 
+	__skb_queue_head_init(&gateq);
 	__skb_queue_head_init(&failq);
 
 	spin_lock_irqsave(&from_mpath->frame_queue.lock, flags);
 	skb_queue_splice_init(&from_mpath->frame_queue, &failq);
 	spin_unlock_irqrestore(&from_mpath->frame_queue.lock, flags);
 
-	skb_queue_walk_safe(&failq, fskb, tmp) {
-		if (skb_queue_len(&gate_mpath->frame_queue) >=
-				  MESH_FRAME_QUEUE_LEN) {
-			mpath_dbg(gate_mpath->sdata, "mpath queue full!\n");
-			break;
+	num_skbs = skb_queue_len(&failq);
+
+	while (num_skbs--) {
+		skb = __skb_dequeue(&failq);
+		if (copy) {
+			cp_skb = skb_copy(skb, GFP_ATOMIC);
+			if (cp_skb)
+				__skb_queue_tail(&failq, cp_skb);
 		}
 
-		skb = skb_copy(fskb, GFP_ATOMIC);
-		if (WARN_ON(!skb))
-			break;
-
 		prepare_for_gate(skb, gate_mpath->dst, gate_mpath);
-		skb_queue_tail(&gate_mpath->frame_queue, skb);
-
-		if (copy)
-			continue;
-
-		__skb_unlink(fskb, &failq);
-		kfree_skb(fskb);
+		__skb_queue_tail(&gateq, skb);
 	}
 
+	spin_lock_irqsave(&gate_mpath->frame_queue.lock, flags);
+	skb_queue_splice(&gateq, &gate_mpath->frame_queue);
 	mpath_dbg(gate_mpath->sdata, "Mpath queue for gate %pM has %d frames\n",
 		  gate_mpath->dst, skb_queue_len(&gate_mpath->frame_queue));
+	spin_unlock_irqrestore(&gate_mpath->frame_queue.lock, flags);
 
 	if (!copy)
 		return;
@@ -527,7 +531,7 @@ int mesh_path_add(u8 *dst, struct ieee80211_sub_if_data *sdata)
 
 	read_lock_bh(&pathtbl_resize_lock);
 	memcpy(new_mpath->dst, dst, ETH_ALEN);
-	eth_broadcast_addr(new_mpath->rann_snd_addr);
+	memset(new_mpath->rann_snd_addr, 0xff, ETH_ALEN);
 	new_mpath->is_root = false;
 	new_mpath->sdata = sdata;
 	new_mpath->flags = 0;

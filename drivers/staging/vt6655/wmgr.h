@@ -286,7 +286,7 @@ typedef struct tagSMgmtObject
     CMD_STATE               eCommandState;
     unsigned int	uScanChannel;
 
-    // Desire joining BSS vars
+    // Desire joinning BSS vars
     unsigned char abyDesireSSID[WLAN_IEHDR_LEN + WLAN_SSID_MAXLEN + 1];
     unsigned char abyDesireBSSID[WLAN_BSSID_LEN];
 
@@ -310,7 +310,7 @@ typedef struct tagSMgmtObject
     unsigned int	uScanEndCh;
     unsigned short wScanSteps;
     unsigned int	uScanBSSType;
-    // Desire scanning vars
+    // Desire scannig vars
     unsigned char abyScanSSID[WLAN_IEHDR_LEN + WLAN_SSID_MAXLEN + 1];
     unsigned char abyScanBSSID[WLAN_BSSID_LEN];
 

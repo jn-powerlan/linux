@@ -37,12 +37,13 @@
 #include <linux/spi/spi.h>
 #include <linux/spi/ads7846.h>
 #include <linux/omapfb.h>
-#include <linux/platform_data/keypad-omap.h>
 
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
 
-#include <mach/omap7xx.h>
+#include <plat/omap7xx.h>
+#include <plat/board.h>
+#include <plat/keypad.h>
 #include <plat/mmc.h>
 
 #include <mach/irqs.h>
@@ -475,7 +476,8 @@ static void __init htcherald_lcd_init(void)
 				break;
 		}
 		if (!tries)
-			pr_err("Timeout waiting for end of frame -- LCD may not be available\n");
+			printk(KERN_WARNING "Timeout waiting for end of frame "
+			       "-- LCD may not be available\n");
 
 		/* turn off DMA */
 		reg = omap_readw(OMAP_DMA_LCD_CCR);

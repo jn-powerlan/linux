@@ -14,6 +14,7 @@
 #endif
 
 #include <linux/compiler.h>
+#include <linux/irqflags.h>
 #include <linux/types.h>
 #include <asm/barrier.h>
 #include <asm/byteorder.h>		/* sigh ... */
@@ -43,24 +44,6 @@
 #define smp_mb__before_clear_bit()	smp_mb__before_llsc()
 #define smp_mb__after_clear_bit()	smp_llsc_mb()
 
-
-/*
- * These are the "slower" versions of the functions and are in bitops.c.
- * These functions call raw_local_irq_{save,restore}().
- */
-void __mips_set_bit(unsigned long nr, volatile unsigned long *addr);
-void __mips_clear_bit(unsigned long nr, volatile unsigned long *addr);
-void __mips_change_bit(unsigned long nr, volatile unsigned long *addr);
-int __mips_test_and_set_bit(unsigned long nr,
-			    volatile unsigned long *addr);
-int __mips_test_and_set_bit_lock(unsigned long nr,
-				 volatile unsigned long *addr);
-int __mips_test_and_clear_bit(unsigned long nr,
-			      volatile unsigned long *addr);
-int __mips_test_and_change_bit(unsigned long nr,
-			       volatile unsigned long *addr);
-
-
 /*
  * set_bit - Atomically set a bit in memory
  * @nr: the bit to set
@@ -74,7 +57,7 @@ int __mips_test_and_change_bit(unsigned long nr,
 static inline void set_bit(unsigned long nr, volatile unsigned long *addr)
 {
 	unsigned long *m = ((unsigned long *) addr) + (nr >> SZLONG_LOG);
-	int bit = nr & SZLONG_MASK;
+	unsigned short bit = nr & SZLONG_MASK;
 	unsigned long temp;
 
 	if (kernel_uses_llsc && R10000_LLSC_WAR) {
@@ -109,8 +92,17 @@ static inline void set_bit(unsigned long nr, volatile unsigned long *addr)
 			: "=&r" (temp), "+m" (*m)
 			: "ir" (1UL << bit));
 		} while (unlikely(!temp));
-	} else
-		__mips_set_bit(nr, addr);
+	} else {
+		volatile unsigned long *a = addr;
+		unsigned long mask;
+		unsigned long flags;
+
+		a += nr >> SZLONG_LOG;
+		mask = 1UL << bit;
+		raw_local_irq_save(flags);
+		*a |= mask;
+		raw_local_irq_restore(flags);
+	}
 }
 
 /*
@@ -126,7 +118,7 @@ static inline void set_bit(unsigned long nr, volatile unsigned long *addr)
 static inline void clear_bit(unsigned long nr, volatile unsigned long *addr)
 {
 	unsigned long *m = ((unsigned long *) addr) + (nr >> SZLONG_LOG);
-	int bit = nr & SZLONG_MASK;
+	unsigned short bit = nr & SZLONG_MASK;
 	unsigned long temp;
 
 	if (kernel_uses_llsc && R10000_LLSC_WAR) {
@@ -161,8 +153,17 @@ static inline void clear_bit(unsigned long nr, volatile unsigned long *addr)
 			: "=&r" (temp), "+m" (*m)
 			: "ir" (~(1UL << bit)));
 		} while (unlikely(!temp));
-	} else
-		__mips_clear_bit(nr, addr);
+	} else {
+		volatile unsigned long *a = addr;
+		unsigned long mask;
+		unsigned long flags;
+
+		a += nr >> SZLONG_LOG;
+		mask = 1UL << bit;
+		raw_local_irq_save(flags);
+		*a &= ~mask;
+		raw_local_irq_restore(flags);
+	}
 }
 
 /*
@@ -190,7 +191,7 @@ static inline void clear_bit_unlock(unsigned long nr, volatile unsigned long *ad
  */
 static inline void change_bit(unsigned long nr, volatile unsigned long *addr)
 {
-	int bit = nr & SZLONG_MASK;
+	unsigned short bit = nr & SZLONG_MASK;
 
 	if (kernel_uses_llsc && R10000_LLSC_WAR) {
 		unsigned long *m = ((unsigned long *) addr) + (nr >> SZLONG_LOG);
@@ -219,8 +220,17 @@ static inline void change_bit(unsigned long nr, volatile unsigned long *addr)
 			: "=&r" (temp), "+m" (*m)
 			: "ir" (1UL << bit));
 		} while (unlikely(!temp));
-	} else
-		__mips_change_bit(nr, addr);
+	} else {
+		volatile unsigned long *a = addr;
+		unsigned long mask;
+		unsigned long flags;
+
+		a += nr >> SZLONG_LOG;
+		mask = 1UL << bit;
+		raw_local_irq_save(flags);
+		*a ^= mask;
+		raw_local_irq_restore(flags);
+	}
 }
 
 /*
@@ -234,7 +244,7 @@ static inline void change_bit(unsigned long nr, volatile unsigned long *addr)
 static inline int test_and_set_bit(unsigned long nr,
 	volatile unsigned long *addr)
 {
-	int bit = nr & SZLONG_MASK;
+	unsigned short bit = nr & SZLONG_MASK;
 	unsigned long res;
 
 	smp_mb__before_llsc();
@@ -271,8 +281,18 @@ static inline int test_and_set_bit(unsigned long nr,
 		} while (unlikely(!res));
 
 		res = temp & (1UL << bit);
-	} else
-		res = __mips_test_and_set_bit(nr, addr);
+	} else {
+		volatile unsigned long *a = addr;
+		unsigned long mask;
+		unsigned long flags;
+
+		a += nr >> SZLONG_LOG;
+		mask = 1UL << bit;
+		raw_local_irq_save(flags);
+		res = (mask & *a);
+		*a |= mask;
+		raw_local_irq_restore(flags);
+	}
 
 	smp_llsc_mb();
 
@@ -290,7 +310,7 @@ static inline int test_and_set_bit(unsigned long nr,
 static inline int test_and_set_bit_lock(unsigned long nr,
 	volatile unsigned long *addr)
 {
-	int bit = nr & SZLONG_MASK;
+	unsigned short bit = nr & SZLONG_MASK;
 	unsigned long res;
 
 	if (kernel_uses_llsc && R10000_LLSC_WAR) {
@@ -325,8 +345,18 @@ static inline int test_and_set_bit_lock(unsigned long nr,
 		} while (unlikely(!res));
 
 		res = temp & (1UL << bit);
-	} else
-		res = __mips_test_and_set_bit_lock(nr, addr);
+	} else {
+		volatile unsigned long *a = addr;
+		unsigned long mask;
+		unsigned long flags;
+
+		a += nr >> SZLONG_LOG;
+		mask = 1UL << bit;
+		raw_local_irq_save(flags);
+		res = (mask & *a);
+		*a |= mask;
+		raw_local_irq_restore(flags);
+	}
 
 	smp_llsc_mb();
 
@@ -343,7 +373,7 @@ static inline int test_and_set_bit_lock(unsigned long nr,
 static inline int test_and_clear_bit(unsigned long nr,
 	volatile unsigned long *addr)
 {
-	int bit = nr & SZLONG_MASK;
+	unsigned short bit = nr & SZLONG_MASK;
 	unsigned long res;
 
 	smp_mb__before_llsc();
@@ -398,8 +428,18 @@ static inline int test_and_clear_bit(unsigned long nr,
 		} while (unlikely(!res));
 
 		res = temp & (1UL << bit);
-	} else
-		res = __mips_test_and_clear_bit(nr, addr);
+	} else {
+		volatile unsigned long *a = addr;
+		unsigned long mask;
+		unsigned long flags;
+
+		a += nr >> SZLONG_LOG;
+		mask = 1UL << bit;
+		raw_local_irq_save(flags);
+		res = (mask & *a);
+		*a &= ~mask;
+		raw_local_irq_restore(flags);
+	}
 
 	smp_llsc_mb();
 
@@ -417,7 +457,7 @@ static inline int test_and_clear_bit(unsigned long nr,
 static inline int test_and_change_bit(unsigned long nr,
 	volatile unsigned long *addr)
 {
-	int bit = nr & SZLONG_MASK;
+	unsigned short bit = nr & SZLONG_MASK;
 	unsigned long res;
 
 	smp_mb__before_llsc();
@@ -454,8 +494,18 @@ static inline int test_and_change_bit(unsigned long nr,
 		} while (unlikely(!res));
 
 		res = temp & (1UL << bit);
-	} else
-		res = __mips_test_and_change_bit(nr, addr);
+	} else {
+		volatile unsigned long *a = addr;
+		unsigned long mask;
+		unsigned long flags;
+
+		a += nr >> SZLONG_LOG;
+		mask = 1UL << bit;
+		raw_local_irq_save(flags);
+		res = (mask & *a);
+		*a ^= mask;
+		raw_local_irq_restore(flags);
+	}
 
 	smp_llsc_mb();
 

@@ -467,7 +467,7 @@ bfin_sport_spi_pump_transfers(unsigned long data)
 		dev_dbg(drv_data->dev, "IO write error!\n");
 		drv_data->state = ERROR_STATE;
 	} else {
-		/* Update total byte transferred */
+		/* Update total byte transfered */
 		message->actual_length += transfer->len;
 		/* Move to next transfer of this msg */
 		drv_data->state = bfin_sport_spi_next_transfer(drv_data);

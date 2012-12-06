@@ -20,7 +20,7 @@
 /*
  * Supports following chips:
  *
- * Chip		#vin	#fanin	#pwm	#temp	wchipid	vendid	i2c	ISA
+ * Chip	#vin	#fanin	#pwm	#temp	wchipid	vendid	i2c	ISA
  * w83l786ng	3	2	2	2	0x7b	0x5ca3	yes	no
  */
 
@@ -33,7 +33,6 @@
 #include <linux/hwmon-sysfs.h>
 #include <linux/err.h>
 #include <linux/mutex.h>
-#include <linux/jiffies.h>
 
 /* Addresses to scan */
 static const unsigned short normal_i2c[] = { 0x2e, 0x2f, I2C_CLIENT_END };
@@ -669,10 +668,11 @@ w83l786ng_probe(struct i2c_client *client, const struct i2c_device_id *id)
 	int i, err = 0;
 	u8 reg_tmp;
 
-	data = devm_kzalloc(&client->dev, sizeof(struct w83l786ng_data),
-			    GFP_KERNEL);
-	if (!data)
-		return -ENOMEM;
+	data = kzalloc(sizeof(struct w83l786ng_data), GFP_KERNEL);
+	if (!data) {
+		err = -ENOMEM;
+		goto exit;
+	}
 
 	i2c_set_clientdata(client, data);
 	mutex_init(&data->update_lock);
@@ -708,6 +708,8 @@ w83l786ng_probe(struct i2c_client *client, const struct i2c_device_id *id)
 
 exit_remove:
 	sysfs_remove_group(&client->dev.kobj, &w83l786ng_group);
+	kfree(data);
+exit:
 	return err;
 }
 
@@ -718,6 +720,8 @@ w83l786ng_remove(struct i2c_client *client)
 
 	hwmon_device_unregister(data->hwmon_dev);
 	sysfs_remove_group(&client->dev.kobj, &w83l786ng_group);
+
+	kfree(data);
 
 	return 0;
 }

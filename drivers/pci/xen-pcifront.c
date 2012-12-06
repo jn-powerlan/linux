@@ -21,7 +21,6 @@
 #include <linux/bitops.h>
 #include <linux/time.h>
 
-#include <asm/xen/swiotlb-xen.h>
 #define INVALID_GRANT_REF (0)
 #define INVALID_EVTCHN    (-1)
 
@@ -237,7 +236,7 @@ static int pcifront_bus_write(struct pci_bus *bus, unsigned int devfn,
 	return errno_to_pcibios_err(do_pci_op(pdev, &op));
 }
 
-static struct pci_ops pcifront_bus_ops = {
+struct pci_ops pcifront_bus_ops = {
 	.read = pcifront_bus_read,
 	.write = pcifront_bus_write,
 };
@@ -669,7 +668,7 @@ static irqreturn_t pcifront_handler_aer(int irq, void *dev)
 	schedule_pcifront_aer_op(pdev);
 	return IRQ_HANDLED;
 }
-static int pcifront_connect_and_init_dma(struct pcifront_device *pdev)
+static int pcifront_connect(struct pcifront_device *pdev)
 {
 	int err = 0;
 
@@ -682,13 +681,9 @@ static int pcifront_connect_and_init_dma(struct pcifront_device *pdev)
 		dev_err(&pdev->xdev->dev, "PCI frontend already installed!\n");
 		err = -EEXIST;
 	}
+
 	spin_unlock(&pcifront_dev_lock);
 
-	if (!err && !swiotlb_nr_tbl()) {
-		err = pci_xen_swiotlb_init_late();
-		if (err)
-			dev_err(&pdev->xdev->dev, "Could not setup SWIOTLB!\n");
-	}
 	return err;
 }
 
@@ -847,10 +842,10 @@ static int __devinit pcifront_try_connect(struct pcifront_device *pdev)
 	    XenbusStateInitialised)
 		goto out;
 
-	err = pcifront_connect_and_init_dma(pdev);
+	err = pcifront_connect(pdev);
 	if (err) {
 		xenbus_dev_fatal(pdev->xdev, err,
-				 "Error setting up PCI Frontend");
+				 "Error connecting PCI Frontend");
 		goto out;
 	}
 
@@ -987,6 +982,7 @@ static int pcifront_detach_devices(struct pcifront_device *pdev)
 	int err = 0;
 	int i, num_devs;
 	unsigned int domain, bus, slot, func;
+	struct pci_bus *pci_bus;
 	struct pci_dev *pci_dev;
 	char str[64];
 
@@ -1036,8 +1032,13 @@ static int pcifront_detach_devices(struct pcifront_device *pdev)
 			goto out;
 		}
 
-		pci_dev = pci_get_domain_bus_and_slot(domain, bus,
-				PCI_DEVFN(slot, func));
+		pci_bus = pci_find_bus(domain, bus);
+		if (!pci_bus) {
+			dev_dbg(&pdev->xdev->dev, "Cannot get bus %04x:%02x\n",
+				domain, bus);
+			continue;
+		}
+		pci_dev = pci_get_slot(pci_bus, PCI_DEVFN(slot, func));
 		if (!pci_dev) {
 			dev_dbg(&pdev->xdev->dev,
 				"Cannot get PCI device %04x:%02x:%02x.%d\n",

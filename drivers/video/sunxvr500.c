@@ -298,10 +298,8 @@ static int __devinit e3d_pci_register(struct pci_dev *pdev,
 		goto err_release_fb;
 	}
 	ep->ramdac = ioremap(ep->regs_base_phys + 0x8000, 0x1000);
-	if (!ep->ramdac) {
-		err = -ENOMEM;
+	if (!ep->ramdac)
 		goto err_release_pci1;
-	}
 
 	ep->fb8_0_off = readl(ep->ramdac + RAMDAC_VID_8FB_0);
 	ep->fb8_0_off -= ep->fb_base_reg;
@@ -345,10 +343,8 @@ static int __devinit e3d_pci_register(struct pci_dev *pdev,
 	ep->fb_size = info->fix.line_length * ep->height;
 
 	ep->fb_base = ioremap(ep->fb_base_phys, ep->fb_size);
-	if (!ep->fb_base) {
-		err = -ENOMEM;
+	if (!ep->fb_base)
 		goto err_release_pci0;
-	}
 
 	err = e3d_set_fbinfo(ep);
 	if (err)

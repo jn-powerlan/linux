@@ -49,7 +49,7 @@ tsb_miss_page_table_walk:
 	/* Before committing to a full page table walk,
 	 * check the huge page TSB.
 	 */
-#if defined(CONFIG_HUGETLB_PAGE) || defined(CONFIG_TRANSPARENT_HUGEPAGE)
+#ifdef CONFIG_HUGETLB_PAGE
 
 661:	ldx		[%g7 + TRAP_PER_CPU_TSB_HUGE], %g5
 	nop
@@ -110,9 +110,12 @@ tsb_miss_page_table_walk:
 tsb_miss_page_table_walk_sun4v_fastpath:
 	USER_PGTABLE_WALK_TL1(%g4, %g7, %g5, %g2, tsb_do_fault)
 
-	/* Valid PTE is now in %g5.  */
+	/* Load and check PTE.  */
+	ldxa		[%g5] ASI_PHYS_USE_EC, %g5
+	brgez,pn	%g5, tsb_do_fault
+	 nop
 
-#if defined(CONFIG_HUGETLB_PAGE) || defined(CONFIG_TRANSPARENT_HUGEPAGE)
+#ifdef CONFIG_HUGETLB_PAGE
 661:	sethi		%uhi(_PAGE_SZALL_4U), %g7
 	sllx		%g7, 32, %g7
 	.section	.sun4v_2insn_patch, "ax"

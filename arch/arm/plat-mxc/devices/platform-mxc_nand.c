@@ -63,6 +63,10 @@ struct platform_device *__init imx_add_mxc_nand(
 	/* AXI has to come first, that's how the mxc_nand driver expect it */
 	struct resource res[] = {
 		{
+			.start = data->axibase,
+			.end = data->axibase + SZ_16K - 1,
+			.flags = IORESOURCE_MEM,
+		}, {
 			.start = data->iobase,
 			.end = data->iobase + data->iosize - 1,
 			.flags = IORESOURCE_MEM,
@@ -70,13 +74,10 @@ struct platform_device *__init imx_add_mxc_nand(
 			.start = data->irq,
 			.end = data->irq,
 			.flags = IORESOURCE_IRQ,
-		}, {
-			.start = data->axibase,
-			.end = data->axibase + SZ_16K - 1,
-			.flags = IORESOURCE_MEM,
 		},
 	};
 	return imx_add_platform_device("mxc_nand", data->id,
-			res, ARRAY_SIZE(res) - !data->axibase,
+			res + !data->axibase,
+			ARRAY_SIZE(res) - !data->axibase,
 			pdata, sizeof(*pdata));
 }

@@ -2475,9 +2475,11 @@ static int dme1737_i2c_probe(struct i2c_client *client,
 	struct device *dev = &client->dev;
 	int err;
 
-	data = devm_kzalloc(dev, sizeof(struct dme1737_data), GFP_KERNEL);
-	if (!data)
-		return -ENOMEM;
+	data = kzalloc(sizeof(struct dme1737_data), GFP_KERNEL);
+	if (!data) {
+		err = -ENOMEM;
+		goto exit;
+	}
 
 	i2c_set_clientdata(client, data);
 	data->type = id->driver_data;
@@ -2489,14 +2491,14 @@ static int dme1737_i2c_probe(struct i2c_client *client,
 	err = dme1737_init_device(dev);
 	if (err) {
 		dev_err(dev, "Failed to initialize device.\n");
-		return err;
+		goto exit_kfree;
 	}
 
 	/* Create sysfs files */
 	err = dme1737_create_files(dev);
 	if (err) {
 		dev_err(dev, "Failed to create sysfs files.\n");
-		return err;
+		goto exit_kfree;
 	}
 
 	/* Register device */
@@ -2511,6 +2513,9 @@ static int dme1737_i2c_probe(struct i2c_client *client,
 
 exit_remove:
 	dme1737_remove_files(dev);
+exit_kfree:
+	kfree(data);
+exit:
 	return err;
 }
 
@@ -2521,6 +2526,7 @@ static int dme1737_i2c_remove(struct i2c_client *client)
 	hwmon_device_unregister(data->hwmon_dev);
 	dme1737_remove_files(&client->dev);
 
+	kfree(data);
 	return 0;
 }
 
@@ -2639,16 +2645,19 @@ static int __devinit dme1737_isa_probe(struct platform_device *pdev)
 	int err;
 
 	res = platform_get_resource(pdev, IORESOURCE_IO, 0);
-	if (!devm_request_region(dev, res->start, DME1737_EXTENT, "dme1737")) {
+	if (!request_region(res->start, DME1737_EXTENT, "dme1737")) {
 		dev_err(dev, "Failed to request region 0x%04x-0x%04x.\n",
 			(unsigned short)res->start,
 			(unsigned short)res->start + DME1737_EXTENT - 1);
-		return -EBUSY;
+		err = -EBUSY;
+		goto exit;
 	}
 
-	data = devm_kzalloc(dev, sizeof(struct dme1737_data), GFP_KERNEL);
-	if (!data)
-		return -ENOMEM;
+	data = kzalloc(sizeof(struct dme1737_data), GFP_KERNEL);
+	if (!data) {
+		err = -ENOMEM;
+		goto exit_release_region;
+	}
 
 	data->addr = res->start;
 	platform_set_drvdata(pdev, data);
@@ -2674,7 +2683,8 @@ static int __devinit dme1737_isa_probe(struct platform_device *pdev)
 			   (device == SCH5127_DEVICE)) {
 			data->type = sch5127;
 		} else {
-			return -ENODEV;
+			err = -ENODEV;
+			goto exit_kfree;
 		}
 	}
 
@@ -2693,14 +2703,14 @@ static int __devinit dme1737_isa_probe(struct platform_device *pdev)
 	err = dme1737_init_device(dev);
 	if (err) {
 		dev_err(dev, "Failed to initialize device.\n");
-		return err;
+		goto exit_kfree;
 	}
 
 	/* Create sysfs files */
 	err = dme1737_create_files(dev);
 	if (err) {
 		dev_err(dev, "Failed to create sysfs files.\n");
-		return err;
+		goto exit_kfree;
 	}
 
 	/* Register device */
@@ -2715,6 +2725,12 @@ static int __devinit dme1737_isa_probe(struct platform_device *pdev)
 
 exit_remove_files:
 	dme1737_remove_files(dev);
+exit_kfree:
+	platform_set_drvdata(pdev, NULL);
+	kfree(data);
+exit_release_region:
+	release_region(res->start, DME1737_EXTENT);
+exit:
 	return err;
 }
 
@@ -2724,6 +2740,9 @@ static int __devexit dme1737_isa_remove(struct platform_device *pdev)
 
 	hwmon_device_unregister(data->hwmon_dev);
 	dme1737_remove_files(&pdev->dev);
+	release_region(data->addr, DME1737_EXTENT);
+	platform_set_drvdata(pdev, NULL);
+	kfree(data);
 
 	return 0;
 }

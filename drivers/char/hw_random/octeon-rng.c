@@ -75,35 +75,42 @@ static int __devinit octeon_rng_probe(struct platform_device *pdev)
 
 	res_ports = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!res_ports)
-		return -ENOENT;
+		goto err_ports;
 
 	res_result = platform_get_resource(pdev, IORESOURCE_MEM, 1);
 	if (!res_result)
-		return -ENOENT;
+		goto err_ports;
 
 
 	rng->control_status = devm_ioremap_nocache(&pdev->dev,
 						   res_ports->start,
 						   sizeof(u64));
 	if (!rng->control_status)
-		return -ENOENT;
+		goto err_ports;
 
 	rng->result = devm_ioremap_nocache(&pdev->dev,
 					   res_result->start,
 					   sizeof(u64));
 	if (!rng->result)
-		return -ENOENT;
+		goto err_r;
 
 	rng->ops = ops;
 
 	dev_set_drvdata(&pdev->dev, &rng->ops);
 	ret = hwrng_register(&rng->ops);
 	if (ret)
-		return -ENOENT;
+		goto err;
 
 	dev_info(&pdev->dev, "Octeon Random Number Generator\n");
 
 	return 0;
+err:
+	devm_iounmap(&pdev->dev, rng->control_status);
+err_r:
+	devm_iounmap(&pdev->dev, rng->result);
+err_ports:
+	devm_kfree(&pdev->dev, rng);
+	return -ENOENT;
 }
 
 static int __exit octeon_rng_remove(struct platform_device *pdev)

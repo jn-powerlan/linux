@@ -20,13 +20,8 @@
 #include <linux/err.h>
 #include <linux/slab.h>
 #include <linux/pm_runtime.h>
-#include <linux/idr.h>
 
 #include "base.h"
-#include "power/power.h"
-
-/* For automatically allocated device IDs */
-static DEFINE_IDA(platform_devid_ida);
 
 #define to_platform_driver(drv)	(container_of((drv), struct platform_driver, \
 				 driver))
@@ -83,16 +78,9 @@ EXPORT_SYMBOL_GPL(platform_get_resource);
  */
 int platform_get_irq(struct platform_device *dev, unsigned int num)
 {
-#ifdef CONFIG_SPARC
-	/* sparc does not have irqs represented as IORESOURCE_IRQ resources */
-	if (!dev || num >= dev->archdata.num_irqs)
-		return -ENXIO;
-	return dev->archdata.irqs[num];
-#else
 	struct resource *r = platform_get_resource(dev, IORESOURCE_IRQ, num);
 
 	return r ? r->start : -ENXIO;
-#endif
 }
 EXPORT_SYMBOL_GPL(platform_get_irq);
 
@@ -110,9 +98,6 @@ struct resource *platform_get_resource_byname(struct platform_device *dev,
 
 	for (i = 0; i < dev->num_resources; i++) {
 		struct resource *r = &dev->resource[i];
-
-		if (unlikely(!r->name))
-			continue;
 
 		if (type == resource_type(r) && !strcmp(r->name, name))
 			return r;
@@ -278,7 +263,7 @@ EXPORT_SYMBOL_GPL(platform_device_add_data);
  */
 int platform_device_add(struct platform_device *pdev)
 {
-	int i, ret;
+	int i, ret = 0;
 
 	if (!pdev)
 		return -EINVAL;
@@ -288,27 +273,10 @@ int platform_device_add(struct platform_device *pdev)
 
 	pdev->dev.bus = &platform_bus_type;
 
-	switch (pdev->id) {
-	default:
+	if (pdev->id != -1)
 		dev_set_name(&pdev->dev, "%s.%d", pdev->name,  pdev->id);
-		break;
-	case PLATFORM_DEVID_NONE:
+	else
 		dev_set_name(&pdev->dev, "%s", pdev->name);
-		break;
-	case PLATFORM_DEVID_AUTO:
-		/*
-		 * Automatically allocated device ID. We mark it as such so
-		 * that we remember it must be freed, and we append a suffix
-		 * to avoid namespace collision with explicit IDs.
-		 */
-		ret = ida_simple_get(&platform_devid_ida, 0, 0, GFP_KERNEL);
-		if (ret < 0)
-			goto err_out;
-		pdev->id = ret;
-		pdev->id_auto = true;
-		dev_set_name(&pdev->dev, "%s.%d.auto", pdev->name, pdev->id);
-		break;
-	}
 
 	for (i = 0; i < pdev->num_resources; i++) {
 		struct resource *p, *r = &pdev->resource[i];
@@ -341,11 +309,6 @@ int platform_device_add(struct platform_device *pdev)
 		return ret;
 
  failed:
-	if (pdev->id_auto) {
-		ida_simple_remove(&platform_devid_ida, pdev->id);
-		pdev->id = PLATFORM_DEVID_AUTO;
-	}
-
 	while (--i >= 0) {
 		struct resource *r = &pdev->resource[i];
 		unsigned long type = resource_type(r);
@@ -354,7 +317,6 @@ int platform_device_add(struct platform_device *pdev)
 			release_resource(r);
 	}
 
- err_out:
 	return ret;
 }
 EXPORT_SYMBOL_GPL(platform_device_add);
@@ -373,11 +335,6 @@ void platform_device_del(struct platform_device *pdev)
 
 	if (pdev) {
 		device_del(&pdev->dev);
-
-		if (pdev->id_auto) {
-			ida_simple_remove(&platform_devid_ida, pdev->id);
-			pdev->id = PLATFORM_DEVID_AUTO;
-		}
 
 		for (i = 0; i < pdev->num_resources; i++) {
 			struct resource *r = &pdev->resource[i];
@@ -991,7 +948,6 @@ void __init early_platform_add_devices(struct platform_device **devs, int num)
 		dev = &devs[i]->dev;
 
 		if (!dev->devres_head.next) {
-			pm_runtime_early_init(dev);
 			INIT_LIST_HEAD(&dev->devres_head);
 			list_add_tail(&dev->devres_head,
 				      &early_platform_device_list);

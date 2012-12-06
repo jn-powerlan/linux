@@ -1,5 +1,5 @@
 #include "util.h"
-#include "linux/string.h"
+#include "string.h"
 
 #define K 1024LL
 /*
@@ -334,20 +334,4 @@ char *rtrim(char *s)
 	*(end + 1) = '\0';
 
 	return s;
-}
-
-/**
- * memdup - duplicate region of memory
- * @src: memory region to duplicate
- * @len: memory region length
- */
-void *memdup(const void *src, size_t len)
-{
-	void *p;
-
-	p = malloc(len);
-	if (p)
-		memcpy(p, src, len);
-
-	return p;
 }

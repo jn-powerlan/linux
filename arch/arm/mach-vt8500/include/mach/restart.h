@@ -13,5 +13,5 @@
  *
  */
 
-void vt8500_setup_restart(void);
-void vt8500_restart(char mode, const char *cmd);
+void wmt_setup_restart(void);
+void wmt_restart(char mode, const char *cmd);

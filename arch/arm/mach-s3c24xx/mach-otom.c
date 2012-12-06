@@ -35,7 +35,7 @@
 #include <plat/s3c2410.h>
 #include <plat/clock.h>
 #include <plat/devs.h>
-#include <linux/platform_data/i2c-s3c2410.h>
+#include <plat/iic.h>
 #include <plat/cpu.h>
 
 #include "common.h"

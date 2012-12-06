@@ -69,7 +69,6 @@
 #include <linux/slab.h>
 #include <linux/perf_event.h>
 #include <linux/file.h>
-#include <linux/ptrace.h>
 
 #include <asm/io.h>
 #include <asm/bugs.h>
@@ -87,6 +86,7 @@ extern void init_IRQ(void);
 extern void fork_init(unsigned long);
 extern void mca_init(void);
 extern void sbus_init(void);
+extern void prio_tree_init(void);
 extern void radix_tree_init(void);
 #ifndef CONFIG_DEBUG_RODATA
 static inline void mark_rodata_ro(void) { }
@@ -442,11 +442,9 @@ void __init __weak smp_setup_processor_id(void)
 {
 }
 
-# if THREAD_SIZE >= PAGE_SIZE
 void __init __weak thread_info_cache_init(void)
 {
 }
-#endif
 
 /*
  * Set up kernel memory allocators
@@ -549,6 +547,7 @@ asmlinkage void __init start_kernel(void)
 	/* init some links before init_ISA_irqs() */
 	early_irq_init();
 	init_IRQ();
+	prio_tree_init();
 	init_timers();
 	hrtimers_init();
 	softirq_init();
@@ -632,10 +631,8 @@ asmlinkage void __init start_kernel(void)
 	acpi_early_init(); /* before LAPIC and SMP init */
 	sfi_init_late();
 
-	if (efi_enabled) {
-		efi_late_init();
+	if (efi_enabled)
 		efi_free_boot_services();
-	}
 
 	ftrace_init();
 
@@ -794,17 +791,17 @@ static void __init do_pre_smp_initcalls(void)
 		do_one_initcall(*fn);
 }
 
-static int run_init_process(const char *init_filename)
+static void run_init_process(const char *init_filename)
 {
 	argv_init[0] = init_filename;
-	return kernel_execve(init_filename, argv_init, envp_init);
+	kernel_execve(init_filename, argv_init, envp_init);
 }
 
-static void __init kernel_init_freeable(void);
-
-static int __ref kernel_init(void *unused)
+/* This is a non __init function. Force it to be noinline otherwise gcc
+ * makes it inline to init() and it becomes part of init.text section
+ */
+static noinline int init_post(void)
 {
-	kernel_init_freeable();
 	/* need to finish all async __init code before freeing the memory */
 	async_synchronize_full();
 	free_initmem();
@@ -816,8 +813,7 @@ static int __ref kernel_init(void *unused)
 	flush_delayed_fput();
 
 	if (ramdisk_execute_command) {
-		if (!run_init_process(ramdisk_execute_command))
-			return 0;
+		run_init_process(ramdisk_execute_command);
 		printk(KERN_WARNING "Failed to execute %s\n",
 				ramdisk_execute_command);
 	}
@@ -829,22 +825,20 @@ static int __ref kernel_init(void *unused)
 	 * trying to recover a really broken machine.
 	 */
 	if (execute_command) {
-		if (!run_init_process(execute_command))
-			return 0;
+		run_init_process(execute_command);
 		printk(KERN_WARNING "Failed to execute %s.  Attempting "
 					"defaults...\n", execute_command);
 	}
-	if (!run_init_process("/sbin/init") ||
-	    !run_init_process("/etc/init") ||
-	    !run_init_process("/bin/init") ||
-	    !run_init_process("/bin/sh"))
-		return 0;
+	run_init_process("/sbin/init");
+	run_init_process("/etc/init");
+	run_init_process("/bin/init");
+	run_init_process("/bin/sh");
 
 	panic("No init found.  Try passing init= option to kernel. "
 	      "See Linux Documentation/init.txt for guidance.");
 }
 
-static void __init kernel_init_freeable(void)
+static int __init kernel_init(void * unused)
 {
 	/*
 	 * Wait until kthreadd is all set-up.
@@ -899,4 +893,7 @@ static void __init kernel_init_freeable(void)
 	 * we're essentially up and running. Get rid of the
 	 * initmem segments and start the user-mode stuff..
 	 */
+
+	init_post();
+	return 0;
 }

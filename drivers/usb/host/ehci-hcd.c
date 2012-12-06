@@ -228,7 +228,7 @@ static int ehci_reset (struct ehci_hcd *ehci)
 
 	/* If the EHCI debug controller is active, special care must be
 	 * taken before and after a host controller reset */
-	if (ehci->debug && !dbgp_reset_prep(ehci_to_hcd(ehci)))
+	if (ehci->debug && !dbgp_reset_prep())
 		ehci->debug = NULL;
 
 	command |= CMD_RESET;
@@ -251,7 +251,7 @@ static int ehci_reset (struct ehci_hcd *ehci)
 		tdi_reset (ehci);
 
 	if (ehci->debug)
-		dbgp_external_startup(ehci_to_hcd(ehci));
+		dbgp_external_startup();
 
 	ehci->port_c_suspend = ehci->suspended_ports =
 			ehci->resuming_ports = 0;

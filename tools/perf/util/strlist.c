@@ -93,7 +93,7 @@ out:
 
 void strlist__remove(struct strlist *slist, struct str_node *snode)
 {
-	rblist__remove_node(&slist->rblist, &snode->rb_node);
+	str_node__delete(snode, slist->dupstr);
 }
 
 struct str_node *strlist__find(struct strlist *slist, const char *entry)

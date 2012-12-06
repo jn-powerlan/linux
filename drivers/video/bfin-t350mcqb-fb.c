@@ -447,7 +447,6 @@ static int __devinit bfin_t350mcqb_probe(struct platform_device *pdev)
 	info = fbinfo->par;
 	info->fb = fbinfo;
 	info->dev = &pdev->dev;
-	spin_lock_init(&info->lock);
 
 	platform_set_drvdata(pdev, fbinfo);
 

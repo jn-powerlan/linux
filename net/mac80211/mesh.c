@@ -109,11 +109,11 @@ bool mesh_matches_local(struct ieee80211_sub_if_data *sdata,
 
 	/* Disallow HT40+/- mismatch */
 	if (ie->ht_operation &&
-	    (sdata->vif.bss_conf.channel_type == NL80211_CHAN_HT40MINUS ||
-	     sdata->vif.bss_conf.channel_type == NL80211_CHAN_HT40PLUS) &&
+	    (local->_oper_channel_type == NL80211_CHAN_HT40MINUS ||
+	    local->_oper_channel_type == NL80211_CHAN_HT40PLUS) &&
 	    (sta_channel_type == NL80211_CHAN_HT40MINUS ||
 	     sta_channel_type == NL80211_CHAN_HT40PLUS) &&
-	    sdata->vif.bss_conf.channel_type != sta_channel_type)
+	    local->_oper_channel_type != sta_channel_type)
 		goto mismatch;
 
 	return true;
@@ -136,13 +136,10 @@ bool mesh_peer_accepts_plinks(struct ieee802_11_elems *ie)
  * mesh_accept_plinks_update - update accepting_plink in local mesh beacons
  *
  * @sdata: mesh interface in which mesh beacons are going to be updated
- *
- * Returns: beacon changed flag if the beacon content changed.
  */
-u32 mesh_accept_plinks_update(struct ieee80211_sub_if_data *sdata)
+void mesh_accept_plinks_update(struct ieee80211_sub_if_data *sdata)
 {
 	bool free_plinks;
-	u32 changed = 0;
 
 	/* In case mesh_plink_free_count > 0 and mesh_plinktbl_capacity == 0,
 	 * the mesh interface might be able to establish plinks with peers that
@@ -152,12 +149,8 @@ u32 mesh_accept_plinks_update(struct ieee80211_sub_if_data *sdata)
 	 */
 	free_plinks = mesh_plink_availables(sdata);
 
-	if (free_plinks != sdata->u.mesh.accepting_plinks) {
-		sdata->u.mesh.accepting_plinks = free_plinks;
-		changed = BSS_CHANGED_BEACON;
-	}
-
-	return changed;
+	if (free_plinks != sdata->u.mesh.accepting_plinks)
+		ieee80211_mesh_housekeeping_timer((unsigned long) sdata);
 }
 
 int mesh_rmc_init(struct ieee80211_sub_if_data *sdata)
@@ -269,6 +262,7 @@ mesh_add_meshconf_ie(struct sk_buff *skb, struct ieee80211_sub_if_data *sdata)
 	neighbors = (neighbors > 15) ? 15 : neighbors;
 	*pos++ = neighbors << 1;
 	/* Mesh capability */
+	ifmsh->accepting_plinks = mesh_plink_availables(sdata);
 	*pos = MESHCONF_CAPAB_FORWARDING;
 	*pos |= ifmsh->accepting_plinks ?
 	    MESHCONF_CAPAB_ACCEPT_PLINKS : 0x00;
@@ -355,18 +349,17 @@ int mesh_add_ds_params_ie(struct sk_buff *skb,
 {
 	struct ieee80211_local *local = sdata->local;
 	struct ieee80211_supported_band *sband;
-	struct ieee80211_channel *chan = local->oper_channel;
 	u8 *pos;
 
 	if (skb_tailroom(skb) < 3)
 		return -ENOMEM;
 
-	sband = local->hw.wiphy->bands[chan->band];
+	sband = local->hw.wiphy->bands[local->hw.conf.channel->band];
 	if (sband->band == IEEE80211_BAND_2GHZ) {
 		pos = skb_put(skb, 2 + 1);
 		*pos++ = WLAN_EID_DS_PARAMS;
 		*pos++ = 1;
-		*pos++ = ieee80211_frequency_to_channel(chan->center_freq);
+		*pos++ = ieee80211_frequency_to_channel(local->hw.conf.channel->center_freq);
 	}
 
 	return 0;
@@ -381,7 +374,7 @@ int mesh_add_ht_cap_ie(struct sk_buff *skb,
 
 	sband = local->hw.wiphy->bands[local->oper_channel->band];
 	if (!sband->ht_cap.ht_supported ||
-	    sdata->vif.bss_conf.channel_type == NL80211_CHAN_NO_HT)
+	    local->_oper_channel_type == NL80211_CHAN_NO_HT)
 		return 0;
 
 	if (skb_tailroom(skb) < 2 + sizeof(struct ieee80211_ht_cap))
@@ -398,8 +391,7 @@ int mesh_add_ht_oper_ie(struct sk_buff *skb,
 {
 	struct ieee80211_local *local = sdata->local;
 	struct ieee80211_channel *channel = local->oper_channel;
-	enum nl80211_channel_type channel_type =
-				sdata->vif.bss_conf.channel_type;
+	enum nl80211_channel_type channel_type = local->_oper_channel_type;
 	struct ieee80211_supported_band *sband =
 				local->hw.wiphy->bands[channel->band];
 	struct ieee80211_sta_ht_cap *ht_cap = &sband->ht_cap;
@@ -529,13 +521,14 @@ int ieee80211_new_mesh_header(struct ieee80211s_hdr *meshhdr,
 static void ieee80211_mesh_housekeeping(struct ieee80211_sub_if_data *sdata,
 			   struct ieee80211_if_mesh *ifmsh)
 {
-	u32 changed;
+	bool free_plinks;
 
 	ieee80211_sta_expire(sdata, IEEE80211_MESH_PEER_INACTIVITY_LIMIT);
 	mesh_path_expire(sdata);
 
-	changed = mesh_accept_plinks_update(sdata);
-	ieee80211_bss_info_change_notify(sdata, changed);
+	free_plinks = mesh_plink_availables(sdata);
+	if (free_plinks != sdata->u.mesh.accepting_plinks)
+		ieee80211_bss_info_change_notify(sdata, BSS_CHANGED_BEACON);
 
 	mod_timer(&ifmsh->housekeeping_timer,
 		  round_jiffies(jiffies + IEEE80211_MESH_HOUSEKEEPING_INTERVAL));
@@ -610,14 +603,12 @@ void ieee80211_start_mesh(struct ieee80211_sub_if_data *sdata)
 	sdata->vif.bss_conf.beacon_int = MESH_DEFAULT_BEACON_INTERVAL;
 	sdata->vif.bss_conf.basic_rates =
 		ieee80211_mandatory_rates(sdata->local,
-					  sdata->local->oper_channel->band);
+					  sdata->local->hw.conf.channel->band);
 	ieee80211_bss_info_change_notify(sdata, BSS_CHANGED_BEACON |
 						BSS_CHANGED_BEACON_ENABLED |
 						BSS_CHANGED_HT |
 						BSS_CHANGED_BASIC_RATES |
 						BSS_CHANGED_BEACON_INT);
-
-	netif_carrier_on(sdata->dev);
 }
 
 void ieee80211_stop_mesh(struct ieee80211_sub_if_data *sdata)
@@ -625,15 +616,9 @@ void ieee80211_stop_mesh(struct ieee80211_sub_if_data *sdata)
 	struct ieee80211_local *local = sdata->local;
 	struct ieee80211_if_mesh *ifmsh = &sdata->u.mesh;
 
-	netif_carrier_off(sdata->dev);
-
-	/* stop the beacon */
 	ifmsh->mesh_id_len = 0;
 	ieee80211_bss_info_change_notify(sdata, BSS_CHANGED_BEACON_ENABLED);
-
-	/* flush STAs and mpaths on this iface */
-	sta_info_flush(sdata->local, sdata);
-	mesh_path_flush_by_iface(sdata);
+	sta_info_flush(local, NULL);
 
 	del_timer_sync(&sdata->u.mesh.housekeeping_timer);
 	del_timer_sync(&sdata->u.mesh.mesh_path_root_timer);

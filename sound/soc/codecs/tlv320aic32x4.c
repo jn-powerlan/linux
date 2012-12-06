@@ -746,7 +746,24 @@ static struct i2c_driver aic32x4_i2c_driver = {
 	.id_table = aic32x4_i2c_id,
 };
 
-module_i2c_driver(aic32x4_i2c_driver);
+static int __init aic32x4_modinit(void)
+{
+	int ret = 0;
+
+	ret = i2c_add_driver(&aic32x4_i2c_driver);
+	if (ret != 0) {
+		printk(KERN_ERR "Failed to register aic32x4 I2C driver: %d\n",
+		       ret);
+	}
+	return ret;
+}
+module_init(aic32x4_modinit);
+
+static void __exit aic32x4_exit(void)
+{
+	i2c_del_driver(&aic32x4_i2c_driver);
+}
+module_exit(aic32x4_exit);
 
 MODULE_DESCRIPTION("ASoC tlv320aic32x4 codec driver");
 MODULE_AUTHOR("Javier Martin <javier.martin@vista-silicon.com>");

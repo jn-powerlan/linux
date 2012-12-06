@@ -98,9 +98,10 @@ static int create_nl_socket(int protocol)
 	if (rcvbufsz)
 		if (setsockopt(fd, SOL_SOCKET, SO_RCVBUF,
 				&rcvbufsz, sizeof(rcvbufsz)) < 0) {
-			fprintf(stderr, "Unable to set socket rcv buf size to %d\n",
+			fprintf(stderr, "Unable to set socket rcv buf size "
+					"to %d\n",
 				rcvbufsz);
-			goto error;
+			return -1;
 		}
 
 	memset(&local, 0, sizeof(local));

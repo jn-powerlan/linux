@@ -27,12 +27,10 @@
 #include <errno.h>
 
 #include "../../perf.h"
-#include "../evsel.h"
 #include "../util.h"
 #include "../event.h"
 #include "../thread.h"
 #include "../trace-event.h"
-#include "../evsel.h"
 
 PyMODINIT_FUNC initperf_trace_context(void);
 
@@ -196,21 +194,16 @@ static void define_event_symbols(struct event_format *event,
 		define_event_symbols(event, ev_name, args->next);
 }
 
-static inline struct event_format *find_cache_event(struct perf_evsel *evsel)
+static inline
+struct event_format *find_cache_event(struct pevent *pevent, int type)
 {
 	static char ev_name[256];
 	struct event_format *event;
-	int type = evsel->attr.config;
 
-	/*
- 	 * XXX: Do we really need to cache this since now we have evsel->tp_format
- 	 * cached already? Need to re-read this "cache" routine that as well calls
- 	 * define_event_symbols() :-\
- 	 */
 	if (events[type])
 		return events[type];
 
-	events[type] = event = evsel->tp_format;
+	events[type] = event = pevent_find_event(pevent, type);
 	if (!event)
 		return NULL;
 
@@ -221,12 +214,12 @@ static inline struct event_format *find_cache_event(struct perf_evsel *evsel)
 	return event;
 }
 
-static void python_process_tracepoint(union perf_event *perf_event
-				      __maybe_unused,
+static void python_process_event(union perf_event *perf_event __unused,
+				 struct pevent *pevent,
 				 struct perf_sample *sample,
-				 struct perf_evsel *evsel,
-				 struct machine *machine __maybe_unused,
-				 struct addr_location *al)
+				 struct perf_evsel *evsel __unused,
+				 struct machine *machine __unused,
+				 struct thread *thread)
 {
 	PyObject *handler, *retval, *context, *t, *obj, *dict = NULL;
 	static char handler_name[256];
@@ -235,22 +228,24 @@ static void python_process_tracepoint(union perf_event *perf_event
 	unsigned long s, ns;
 	struct event_format *event;
 	unsigned n = 0;
+	int type;
 	int pid;
 	int cpu = sample->cpu;
 	void *data = sample->raw_data;
 	unsigned long long nsecs = sample->time;
-	struct thread *thread = al->thread;
 	char *comm = thread->comm;
 
 	t = PyTuple_New(MAX_FIELDS);
 	if (!t)
 		Py_FatalError("couldn't create Python tuple");
 
-	event = find_cache_event(evsel);
-	if (!event)
-		die("ug! no event found for type %d", (int)evsel->attr.config);
+	type = trace_parse_common_type(pevent, data);
 
-	pid = raw_field_value(event, "common_pid", data);
+	event = find_cache_event(pevent, type);
+	if (!event)
+		die("ug! no event found for type %d", type);
+
+	pid = trace_parse_common_pid(pevent, data);
 
 	sprintf(handler_name, "%s__%s", event->system, event->name);
 
@@ -295,7 +290,7 @@ static void python_process_tracepoint(union perf_event *perf_event
 				offset = field->offset;
 			obj = PyString_FromString((char *)data + offset);
 		} else { /* FIELD_IS_NUMERIC */
-			val = read_size(event, data + field->offset,
+			val = read_size(pevent, data + field->offset,
 					field->size);
 			if (field->flags & FIELD_IS_SIGNED) {
 				if ((long long)val >= LONG_MIN &&
@@ -338,84 +333,6 @@ static void python_process_tracepoint(union perf_event *perf_event
 	}
 
 	Py_DECREF(t);
-}
-
-static void python_process_general_event(union perf_event *perf_event
-					 __maybe_unused,
-					 struct perf_sample *sample,
-					 struct perf_evsel *evsel,
-					 struct machine *machine __maybe_unused,
-					 struct addr_location *al)
-{
-	PyObject *handler, *retval, *t, *dict;
-	static char handler_name[64];
-	unsigned n = 0;
-	struct thread *thread = al->thread;
-
-	/*
-	 * Use the MAX_FIELDS to make the function expandable, though
-	 * currently there is only one item for the tuple.
-	 */
-	t = PyTuple_New(MAX_FIELDS);
-	if (!t)
-		Py_FatalError("couldn't create Python tuple");
-
-	dict = PyDict_New();
-	if (!dict)
-		Py_FatalError("couldn't create Python dictionary");
-
-	snprintf(handler_name, sizeof(handler_name), "%s", "process_event");
-
-	handler = PyDict_GetItemString(main_dict, handler_name);
-	if (!handler || !PyCallable_Check(handler))
-		goto exit;
-
-	PyDict_SetItemString(dict, "ev_name", PyString_FromString(perf_evsel__name(evsel)));
-	PyDict_SetItemString(dict, "attr", PyString_FromStringAndSize(
-			(const char *)&evsel->attr, sizeof(evsel->attr)));
-	PyDict_SetItemString(dict, "sample", PyString_FromStringAndSize(
-			(const char *)sample, sizeof(*sample)));
-	PyDict_SetItemString(dict, "raw_buf", PyString_FromStringAndSize(
-			(const char *)sample->raw_data, sample->raw_size));
-	PyDict_SetItemString(dict, "comm",
-			PyString_FromString(thread->comm));
-	if (al->map) {
-		PyDict_SetItemString(dict, "dso",
-			PyString_FromString(al->map->dso->name));
-	}
-	if (al->sym) {
-		PyDict_SetItemString(dict, "symbol",
-			PyString_FromString(al->sym->name));
-	}
-
-	PyTuple_SetItem(t, n++, dict);
-	if (_PyTuple_Resize(&t, n) == -1)
-		Py_FatalError("error resizing Python tuple");
-
-	retval = PyObject_CallObject(handler, t);
-	if (retval == NULL)
-		handler_call_die(handler_name);
-exit:
-	Py_DECREF(dict);
-	Py_DECREF(t);
-}
-
-static void python_process_event(union perf_event *perf_event,
-				 struct perf_sample *sample,
-				 struct perf_evsel *evsel,
-				 struct machine *machine,
-				 struct addr_location *al)
-{
-	switch (evsel->attr.type) {
-	case PERF_TYPE_TRACEPOINT:
-		python_process_tracepoint(perf_event, sample, evsel,
-					  machine, al);
-		break;
-	/* Reserve for future process_hw/sw/raw APIs */
-	default:
-		python_process_general_event(perf_event, sample, evsel,
-					     machine, al);
-	}
 }
 
 static int run_start_sub(void)

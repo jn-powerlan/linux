@@ -124,5 +124,4 @@ int kvm_write_guest_virt_system(struct x86_emulate_ctxt *ctxt,
 
 extern u64 host_xcr0;
 
-extern struct static_key kvm_no_apic_vcpu;
 #endif

@@ -30,13 +30,13 @@
 #include <plat/clock.h>
 #include <plat/cpu.h>
 #include <plat/devs.h>
-#include <linux/platform_data/i2c-s3c2410.h>
+#include <plat/iic.h>
 #include <plat/gpio-cfg.h>
-#include <linux/platform_data/hwmon-s3c.h>
+#include <plat/hwmon.h>
 #include <plat/regs-serial.h>
-#include <linux/platform_data/usb-ohci-s3c2410.h>
+#include <plat/usb-control.h>
 #include <plat/sdhci.h>
-#include <linux/platform_data/touchscreen-s3c2410.h>
+#include <plat/ts.h>
 
 #include <video/platform_lcd.h>
 

@@ -26,12 +26,9 @@
 #include <linux/netfilter/ipset/ip_set_timeout.h>
 #include <linux/netfilter/ipset/ip_set_bitmap.h>
 
-#define REVISION_MIN	0
-#define REVISION_MAX	0
-
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Jozsef Kadlecsik <kadlec@blackhole.kfki.hu>");
-IP_SET_MODULE_DESC("bitmap:ip,mac", REVISION_MIN, REVISION_MAX);
+MODULE_DESCRIPTION("bitmap:ip,mac type of IP sets");
 MODULE_ALIAS("ip_set_bitmap:ip,mac");
 
 enum {
@@ -323,11 +320,11 @@ bitmap_ipmac_tlist(const struct ip_set *set,
 		    (elem->match == MAC_FILLED &&
 		     nla_put(skb, IPSET_ATTR_ETHER, ETH_ALEN,
 			     elem->ether)))
-			goto nla_put_failure;
+		    goto nla_put_failure;
 		timeout = elem->match == MAC_UNSET ? elem->timeout
 				: ip_set_timeout_get(elem->timeout);
 		if (nla_put_net32(skb, IPSET_ATTR_TIMEOUT, htonl(timeout)))
-			goto nla_put_failure;
+		    goto nla_put_failure;
 		ipset_nest_end(skb, nested);
 	}
 	ipset_nest_end(skb, atd);
@@ -560,8 +557,7 @@ static int
 bitmap_ipmac_create(struct ip_set *set, struct nlattr *tb[],
 		    u32 flags)
 {
-	u32 first_ip, last_ip;
-	u64 elements;
+	u32 first_ip, last_ip, elements;
 	struct bitmap_ipmac *map;
 	int ret;
 
@@ -592,7 +588,7 @@ bitmap_ipmac_create(struct ip_set *set, struct nlattr *tb[],
 	} else
 		return -IPSET_ERR_PROTOCOL;
 
-	elements = (u64)last_ip - first_ip + 1;
+	elements = last_ip - first_ip + 1;
 
 	if (elements > IPSET_BITMAP_MAX_RANGE + 1)
 		return -IPSET_ERR_BITMAP_RANGE_SIZE;
@@ -633,8 +629,8 @@ static struct ip_set_type bitmap_ipmac_type = {
 	.features	= IPSET_TYPE_IP | IPSET_TYPE_MAC,
 	.dimension	= IPSET_DIM_TWO,
 	.family		= NFPROTO_IPV4,
-	.revision_min	= REVISION_MIN,
-	.revision_max	= REVISION_MAX,
+	.revision_min	= 0,
+	.revision_max	= 0,
 	.create		= bitmap_ipmac_create,
 	.create_policy	= {
 		[IPSET_ATTR_IP]		= { .type = NLA_NESTED },

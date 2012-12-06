@@ -27,7 +27,7 @@
 #include <linux/of_gpio.h>
 #include <linux/pm_runtime.h>
 
-#include <linux/usb/tegra_usb_phy.h>
+#include <mach/usb_phy.h>
 #include <mach/iomap.h>
 
 #define TEGRA_USB_DMA_ALIGN 32
@@ -49,7 +49,7 @@ static void tegra_ehci_power_up(struct usb_hcd *hcd)
 
 	clk_prepare_enable(tegra->emc_clk);
 	clk_prepare_enable(tegra->clk);
-	usb_phy_set_suspend(&tegra->phy->u_phy, 0);
+	tegra_usb_phy_power_on(tegra->phy);
 	tegra->host_resumed = 1;
 }
 
@@ -58,7 +58,7 @@ static void tegra_ehci_power_down(struct usb_hcd *hcd)
 	struct tegra_ehci_hcd *tegra = dev_get_drvdata(hcd->self.controller);
 
 	tegra->host_resumed = 0;
-	usb_phy_set_suspend(&tegra->phy->u_phy, 1);
+	tegra_usb_phy_power_off(tegra->phy);
 	clk_disable_unprepare(tegra->clk);
 	clk_disable_unprepare(tegra->emc_clk);
 }
@@ -634,8 +634,7 @@ static int tegra_ehci_probe(struct platform_device *pdev)
 
 	setup_vbus_gpio(pdev, pdata);
 
-	tegra = devm_kzalloc(&pdev->dev, sizeof(struct tegra_ehci_hcd),
-			     GFP_KERNEL);
+	tegra = kzalloc(sizeof(struct tegra_ehci_hcd), GFP_KERNEL);
 	if (!tegra)
 		return -ENOMEM;
 
@@ -643,12 +642,13 @@ static int tegra_ehci_probe(struct platform_device *pdev)
 					dev_name(&pdev->dev));
 	if (!hcd) {
 		dev_err(&pdev->dev, "Unable to create HCD\n");
-		return -ENOMEM;
+		err = -ENOMEM;
+		goto fail_hcd;
 	}
 
 	platform_set_drvdata(pdev, tegra);
 
-	tegra->clk = devm_clk_get(&pdev->dev, NULL);
+	tegra->clk = clk_get(&pdev->dev, NULL);
 	if (IS_ERR(tegra->clk)) {
 		dev_err(&pdev->dev, "Can't get ehci clock\n");
 		err = PTR_ERR(tegra->clk);
@@ -657,9 +657,9 @@ static int tegra_ehci_probe(struct platform_device *pdev)
 
 	err = clk_prepare_enable(tegra->clk);
 	if (err)
-		goto fail_clk;
+		goto fail_clken;
 
-	tegra->emc_clk = devm_clk_get(&pdev->dev, "emc");
+	tegra->emc_clk = clk_get(&pdev->dev, "emc");
 	if (IS_ERR(tegra->emc_clk)) {
 		dev_err(&pdev->dev, "Can't get emc clock\n");
 		err = PTR_ERR(tegra->emc_clk);
@@ -677,7 +677,7 @@ static int tegra_ehci_probe(struct platform_device *pdev)
 	}
 	hcd->rsrc_start = res->start;
 	hcd->rsrc_len = resource_size(res);
-	hcd->regs = devm_ioremap(&pdev->dev, res->start, resource_size(res));
+	hcd->regs = ioremap(res->start, resource_size(res));
 	if (!hcd->regs) {
 		dev_err(&pdev->dev, "Failed to remap I/O memory\n");
 		err = -ENOMEM;
@@ -702,7 +702,7 @@ static int tegra_ehci_probe(struct platform_device *pdev)
 		default:
 			err = -ENODEV;
 			dev_err(&pdev->dev, "unknown usb instance\n");
-			goto fail_io;
+			goto fail_phy;
 		}
 	}
 
@@ -712,12 +712,10 @@ static int tegra_ehci_probe(struct platform_device *pdev)
 	if (IS_ERR(tegra->phy)) {
 		dev_err(&pdev->dev, "Failed to open USB phy\n");
 		err = -ENXIO;
-		goto fail_io;
+		goto fail_phy;
 	}
 
-	usb_phy_init(&tegra->phy->u_phy);
-
-	err = usb_phy_set_suspend(&tegra->phy->u_phy, 0);
+	err = tegra_usb_phy_power_on(tegra->phy);
 	if (err) {
 		dev_err(&pdev->dev, "Failed to power on the phy\n");
 		goto fail;
@@ -735,8 +733,7 @@ static int tegra_ehci_probe(struct platform_device *pdev)
 
 #ifdef CONFIG_USB_OTG_UTILS
 	if (pdata->operating_mode == TEGRA_USB_OTG) {
-		tegra->transceiver =
-			devm_usb_get_phy(&pdev->dev, USB_PHY_TYPE_USB2);
+		tegra->transceiver = usb_get_phy(USB_PHY_TYPE_USB2);
 		if (!IS_ERR_OR_NULL(tegra->transceiver))
 			otg_set_host(tegra->transceiver->otg, &hcd->self);
 	}
@@ -760,16 +757,25 @@ static int tegra_ehci_probe(struct platform_device *pdev)
 
 fail:
 #ifdef CONFIG_USB_OTG_UTILS
-	if (!IS_ERR_OR_NULL(tegra->transceiver))
+	if (!IS_ERR_OR_NULL(tegra->transceiver)) {
 		otg_set_host(tegra->transceiver->otg, NULL);
+		usb_put_phy(tegra->transceiver);
+	}
 #endif
-	usb_phy_shutdown(&tegra->phy->u_phy);
+	tegra_usb_phy_close(tegra->phy);
+fail_phy:
+	iounmap(hcd->regs);
 fail_io:
 	clk_disable_unprepare(tegra->emc_clk);
+	clk_put(tegra->emc_clk);
 fail_emc_clk:
 	clk_disable_unprepare(tegra->clk);
+fail_clken:
+	clk_put(tegra->clk);
 fail_clk:
 	usb_put_hcd(hcd);
+fail_hcd:
+	kfree(tegra);
 	return err;
 }
 
@@ -786,19 +792,26 @@ static int tegra_ehci_remove(struct platform_device *pdev)
 	pm_runtime_put_noidle(&pdev->dev);
 
 #ifdef CONFIG_USB_OTG_UTILS
-	if (!IS_ERR_OR_NULL(tegra->transceiver))
+	if (!IS_ERR_OR_NULL(tegra->transceiver)) {
 		otg_set_host(tegra->transceiver->otg, NULL);
+		usb_put_phy(tegra->transceiver);
+	}
 #endif
 
 	usb_remove_hcd(hcd);
+
+	tegra_usb_phy_close(tegra->phy);
+	iounmap(hcd->regs);
+
 	usb_put_hcd(hcd);
 
-	usb_phy_shutdown(&tegra->phy->u_phy);
-
 	clk_disable_unprepare(tegra->clk);
+	clk_put(tegra->clk);
 
 	clk_disable_unprepare(tegra->emc_clk);
+	clk_put(tegra->emc_clk);
 
+	kfree(tegra);
 	return 0;
 }
 

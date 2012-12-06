@@ -18,7 +18,7 @@
 #include <linux/time.h>
 #include <linux/buffer_head.h>
 #include <linux/compat.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 #include <linux/kernel.h>
 #include "fat.h"
 
@@ -123,8 +123,7 @@ static inline int fat_get_entry(struct inode *dir, loff_t *pos,
 {
 	/* Fast stuff first */
 	if (*bh && *de &&
-	   (*de - (struct msdos_dir_entry *)(*bh)->b_data) <
-				MSDOS_SB(dir->i_sb)->dir_per_block - 1) {
+	    (*de - (struct msdos_dir_entry *)(*bh)->b_data) < MSDOS_SB(dir->i_sb)->dir_per_block - 1) {
 		*pos += sizeof(struct msdos_dir_entry);
 		(*de)++;
 		return 0;
@@ -156,8 +155,7 @@ static int uni16_to_x8(struct super_block *sb, unsigned char *ascii,
 
 	while (*ip && ((len - NLS_MAX_CHARSET_SIZE) > 0)) {
 		ec = *ip++;
-		charlen = nls->uni2char(ec, op, NLS_MAX_CHARSET_SIZE);
-		if (charlen > 0) {
+		if ((charlen = nls->uni2char(ec, op, NLS_MAX_CHARSET_SIZE)) > 0) {
 			op += charlen;
 			len -= charlen;
 		} else {
@@ -174,12 +172,12 @@ static int uni16_to_x8(struct super_block *sb, unsigned char *ascii,
 	}
 
 	if (unlikely(*ip)) {
-		fat_msg(sb, KERN_WARNING,
-			"filename was truncated while converting.");
+		fat_msg(sb, KERN_WARNING, "filename was truncated while "
+			"converting.");
 	}
 
 	*op = 0;
-	return op - ascii;
+	return (op - ascii);
 }
 
 static inline int fat_uni_to_x8(struct super_block *sb, const wchar_t *uni,
@@ -207,8 +205,7 @@ fat_short2uni(struct nls_table *t, unsigned char *c, int clen, wchar_t *uni)
 }
 
 static inline int
-fat_short2lower_uni(struct nls_table *t, unsigned char *c,
-		    int clen, wchar_t *uni)
+fat_short2lower_uni(struct nls_table *t, unsigned char *c, int clen, wchar_t *uni)
 {
 	int charlen;
 	wchar_t wc;
@@ -223,8 +220,7 @@ fat_short2lower_uni(struct nls_table *t, unsigned char *c,
 		if (!nc)
 			nc = *c;
 
-		charlen = t->char2uni(&nc, 1, uni);
-		if (charlen < 0) {
+		if ( (charlen = t->char2uni(&nc, 1, uni)) < 0) {
 			*uni = 0x003f;	/* a question mark */
 			charlen = 1;
 		}
@@ -541,6 +537,7 @@ end_of_dir:
 
 	return err;
 }
+
 EXPORT_SYMBOL_GPL(fat_search_long);
 
 struct fat_ioctl_filldir_callback {
@@ -571,14 +568,13 @@ static int __fat_readdir(struct inode *inode, struct file *filp, void *dirent,
 	int short_len = 0, fill_len = 0;
 	int ret = 0;
 
-	mutex_lock(&sbi->s_lock);
+	lock_super(sb);
 
 	cpos = filp->f_pos;
 	/* Fake . and .. for the root directory. */
 	if (inode->i_ino == MSDOS_ROOT_INO) {
 		while (cpos < 2) {
-			if (filldir(dirent, "..", cpos+1, cpos,
-				    MSDOS_ROOT_INO, DT_DIR) < 0)
+			if (filldir(dirent, "..", cpos+1, cpos, MSDOS_ROOT_INO, DT_DIR) < 0)
 				goto out;
 			cpos++;
 			filp->f_pos++;
@@ -693,7 +689,7 @@ fill_failed:
 	if (unicode)
 		__putname(unicode);
 out:
-	mutex_unlock(&sbi->s_lock);
+	unlock_super(sb);
 	return ret;
 }
 
@@ -876,26 +872,25 @@ static int fat_get_short_entry(struct inode *dir, loff_t *pos,
 }
 
 /*
- * The ".." entry can not provide the "struct fat_slot_info" information
- * for inode, nor a usable i_pos. So, this function provides some information
- * only.
- *
- * Since this function walks through the on-disk inodes within a directory,
- * callers are responsible for taking any locks necessary to prevent the
- * directory from changing.
+ * The ".." entry can not provide the "struct fat_slot_info" informations
+ * for inode. So, this function provide the some informations only.
  */
 int fat_get_dotdot_entry(struct inode *dir, struct buffer_head **bh,
-			 struct msdos_dir_entry **de)
+			 struct msdos_dir_entry **de, loff_t *i_pos)
 {
-	loff_t offset = 0;
+	loff_t offset;
 
-	*de = NULL;
+	offset = 0;
+	*bh = NULL;
 	while (fat_get_short_entry(dir, &offset, bh, de) >= 0) {
-		if (!strncmp((*de)->name, MSDOS_DOTDOT, MSDOS_NAME))
+		if (!strncmp((*de)->name, MSDOS_DOTDOT, MSDOS_NAME)) {
+			*i_pos = fat_make_i_pos(dir->i_sb, *bh, *de);
 			return 0;
+		}
 	}
 	return -ENOENT;
 }
+
 EXPORT_SYMBOL_GPL(fat_get_dotdot_entry);
 
 /* See if directory is empty */
@@ -918,6 +913,7 @@ int fat_dir_empty(struct inode *dir)
 	brelse(bh);
 	return result;
 }
+
 EXPORT_SYMBOL_GPL(fat_dir_empty);
 
 /*
@@ -963,6 +959,7 @@ int fat_scan(struct inode *dir, const unsigned char *name,
 	}
 	return -ENOENT;
 }
+
 EXPORT_SYMBOL_GPL(fat_scan);
 
 static int __fat_remove_entries(struct inode *dir, loff_t pos, int nr_slots)
@@ -1050,6 +1047,7 @@ int fat_remove_entries(struct inode *dir, struct fat_slot_info *sinfo)
 
 	return 0;
 }
+
 EXPORT_SYMBOL_GPL(fat_remove_entries);
 
 static int fat_zeroed_cluster(struct inode *dir, sector_t blknr, int nr_used,
@@ -1143,8 +1141,10 @@ int fat_alloc_new_dir(struct inode *dir, struct timespec *ts)
 		de[0].ctime_cs = de[1].ctime_cs = 0;
 		de[0].adate = de[0].cdate = de[1].adate = de[1].cdate = 0;
 	}
-	fat_set_start(&de[0], cluster);
-	fat_set_start(&de[1], MSDOS_I(dir)->i_logstart);
+	de[0].start = cpu_to_le16(cluster);
+	de[0].starthi = cpu_to_le16(cluster >> 16);
+	de[1].start = cpu_to_le16(MSDOS_I(dir)->i_logstart);
+	de[1].starthi = cpu_to_le16(MSDOS_I(dir)->i_logstart >> 16);
 	de[0].size = de[1].size = 0;
 	memset(de + 2, 0, sb->s_blocksize - 2 * sizeof(*de));
 	set_buffer_uptodate(bhs[0]);
@@ -1161,6 +1161,7 @@ error_free:
 error:
 	return err;
 }
+
 EXPORT_SYMBOL_GPL(fat_alloc_new_dir);
 
 static int fat_add_new_entries(struct inode *dir, void *slots, int nr_slots,
@@ -1376,4 +1377,5 @@ error_remove:
 		__fat_remove_entries(dir, pos, free_slots);
 	return err;
 }
+
 EXPORT_SYMBOL_GPL(fat_add_entries);

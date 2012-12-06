@@ -760,20 +760,18 @@ static int __devinit bfin_lq035_probe(struct platform_device *pdev)
 	bfin_lq035_fb.flags = FBINFO_DEFAULT;
 
 
-	bfin_lq035_fb.pseudo_palette = devm_kzalloc(&pdev->dev,
-						    sizeof(u32) * 16,
-						    GFP_KERNEL);
+	bfin_lq035_fb.pseudo_palette = kzalloc(sizeof(u32) * 16, GFP_KERNEL);
 	if (bfin_lq035_fb.pseudo_palette == NULL) {
 		pr_err("failed to allocate pseudo_palette\n");
 		ret = -ENOMEM;
-		goto out_table;
+		goto out_palette;
 	}
 
 	if (fb_alloc_cmap(&bfin_lq035_fb.cmap, NBR_PALETTE, 0) < 0) {
 		pr_err("failed to allocate colormap (%d entries)\n",
 			NBR_PALETTE);
 		ret = -EFAULT;
-		goto out_table;
+		goto out_cmap;
 	}
 
 	if (register_framebuffer(&bfin_lq035_fb) < 0) {
@@ -806,6 +804,9 @@ out_lcd:
 	unregister_framebuffer(&bfin_lq035_fb);
 out_reg:
 	fb_dealloc_cmap(&bfin_lq035_fb.cmap);
+out_cmap:
+	kfree(bfin_lq035_fb.pseudo_palette);
+out_palette:
 out_table:
 	dma_free_coherent(NULL, TOTAL_VIDEO_MEM_SIZE, fb_buffer, 0);
 	fb_buffer = NULL;
@@ -833,6 +834,7 @@ static int __devexit bfin_lq035_remove(struct platform_device *pdev)
 	free_dma(CH_PPI);
 
 
+	kfree(bfin_lq035_fb.pseudo_palette);
 	fb_dealloc_cmap(&bfin_lq035_fb.cmap);
 
 

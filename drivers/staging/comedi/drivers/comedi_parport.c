@@ -85,8 +85,6 @@ pin, which can be used to wake up tasks.
 #include <linux/interrupt.h>
 #include <linux/ioport.h>
 
-#include "comedi_fc.h"
-
 #define PARPORT_SIZE 3
 
 #define PARPORT_A 0
@@ -98,12 +96,11 @@ struct parport_private {
 	unsigned int c_data;
 	int enable_irq;
 };
+#define devpriv ((struct parport_private *)(dev->private))
 
 static int parport_insn_a(struct comedi_device *dev, struct comedi_subdevice *s,
 			  struct comedi_insn *insn, unsigned int *data)
 {
-	struct parport_private *devpriv = dev->private;
-
 	if (data[0]) {
 		devpriv->a_data &= ~data[0];
 		devpriv->a_data |= (data[0] & data[1]);
@@ -120,8 +117,6 @@ static int parport_insn_config_a(struct comedi_device *dev,
 				 struct comedi_subdevice *s,
 				 struct comedi_insn *insn, unsigned int *data)
 {
-	struct parport_private *devpriv = dev->private;
-
 	if (data[0]) {
 		s->io_bits = 0xff;
 		devpriv->c_data &= ~(1 << 5);
@@ -150,8 +145,6 @@ static int parport_insn_b(struct comedi_device *dev, struct comedi_subdevice *s,
 static int parport_insn_c(struct comedi_device *dev, struct comedi_subdevice *s,
 			  struct comedi_insn *insn, unsigned int *data)
 {
-	struct parport_private *devpriv = dev->private;
-
 	data[0] &= 0x0f;
 	if (data[0]) {
 		devpriv->c_data &= ~data[0];
@@ -178,20 +171,39 @@ static int parport_intr_cmdtest(struct comedi_device *dev,
 				struct comedi_cmd *cmd)
 {
 	int err = 0;
+	int tmp;
 
-	/* Step 1 : check if triggers are trivially valid */
+	/* step 1 */
 
-	err |= cfc_check_trigger_src(&cmd->start_src, TRIG_NOW);
-	err |= cfc_check_trigger_src(&cmd->scan_begin_src, TRIG_EXT);
-	err |= cfc_check_trigger_src(&cmd->convert_src, TRIG_FOLLOW);
-	err |= cfc_check_trigger_src(&cmd->scan_end_src, TRIG_COUNT);
-	err |= cfc_check_trigger_src(&cmd->stop_src, TRIG_NONE);
+	tmp = cmd->start_src;
+	cmd->start_src &= TRIG_NOW;
+	if (!cmd->start_src || tmp != cmd->start_src)
+		err++;
+
+	tmp = cmd->scan_begin_src;
+	cmd->scan_begin_src &= TRIG_EXT;
+	if (!cmd->scan_begin_src || tmp != cmd->scan_begin_src)
+		err++;
+
+	tmp = cmd->convert_src;
+	cmd->convert_src &= TRIG_FOLLOW;
+	if (!cmd->convert_src || tmp != cmd->convert_src)
+		err++;
+
+	tmp = cmd->scan_end_src;
+	cmd->scan_end_src &= TRIG_COUNT;
+	if (!cmd->scan_end_src || tmp != cmd->scan_end_src)
+		err++;
+
+	tmp = cmd->stop_src;
+	cmd->stop_src &= TRIG_NONE;
+	if (!cmd->stop_src || tmp != cmd->stop_src)
+		err++;
 
 	if (err)
 		return 1;
 
-	/* Step 2a : make sure trigger sources are unique */
-	/* Step 2b : and mutually compatible */
+	/* step 2: ignored */
 
 	if (err)
 		return 2;
@@ -233,8 +245,6 @@ static int parport_intr_cmdtest(struct comedi_device *dev,
 static int parport_intr_cmd(struct comedi_device *dev,
 			    struct comedi_subdevice *s)
 {
-	struct parport_private *devpriv = dev->private;
-
 	devpriv->c_data |= 0x10;
 	outb(devpriv->c_data, dev->iobase + PARPORT_C);
 
@@ -246,7 +256,7 @@ static int parport_intr_cmd(struct comedi_device *dev,
 static int parport_intr_cancel(struct comedi_device *dev,
 			       struct comedi_subdevice *s)
 {
-	struct parport_private *devpriv = dev->private;
+	printk(KERN_DEBUG "parport_intr_cancel()\n");
 
 	devpriv->c_data &= ~0x10;
 	outb(devpriv->c_data, dev->iobase + PARPORT_C);
@@ -259,11 +269,12 @@ static int parport_intr_cancel(struct comedi_device *dev,
 static irqreturn_t parport_interrupt(int irq, void *d)
 {
 	struct comedi_device *dev = d;
-	struct parport_private *devpriv = dev->private;
-	struct comedi_subdevice *s = &dev->subdevices[3];
+	struct comedi_subdevice *s = dev->subdevices + 3;
 
-	if (!devpriv->enable_irq)
+	if (!devpriv->enable_irq) {
+		printk(KERN_ERR "comedi_parport: bogus irq, ignored\n");
 		return IRQ_NONE;
+	}
 
 	comedi_buf_put(s->async, 0);
 	s->async->events |= COMEDI_CB_BLOCK | COMEDI_CB_EOS;
@@ -275,42 +286,41 @@ static irqreturn_t parport_interrupt(int irq, void *d)
 static int parport_attach(struct comedi_device *dev,
 			  struct comedi_devconfig *it)
 {
-	struct parport_private *devpriv;
 	int ret;
 	unsigned int irq;
 	unsigned long iobase;
 	struct comedi_subdevice *s;
 
-	dev->board_name = dev->driver->driver_name;
-
 	iobase = it->options[0];
-	if (!request_region(iobase, PARPORT_SIZE, dev->board_name)) {
-		dev_err(dev->class_dev, "I/O port conflict\n");
+	printk(KERN_INFO "comedi%d: parport: 0x%04lx ", dev->minor, iobase);
+	if (!request_region(iobase, PARPORT_SIZE, "parport (comedi)")) {
+		printk(KERN_ERR "I/O port conflict\n");
 		return -EIO;
 	}
 	dev->iobase = iobase;
 
 	irq = it->options[1];
 	if (irq) {
-		ret = request_irq(irq, parport_interrupt, 0, dev->board_name,
+		printk(KERN_INFO " irq=%u", irq);
+		ret = request_irq(irq, parport_interrupt, 0, "comedi_parport",
 				  dev);
 		if (ret < 0) {
-			dev_err(dev->class_dev, "irq not available\n");
+			printk(KERN_ERR " irq not available\n");
 			return -EINVAL;
 		}
 		dev->irq = irq;
 	}
+	dev->board_name = "parport";
 
 	ret = comedi_alloc_subdevices(dev, 4);
 	if (ret)
 		return ret;
 
-	ret = alloc_private(dev, sizeof(*devpriv));
+	ret = alloc_private(dev, sizeof(struct parport_private));
 	if (ret < 0)
 		return ret;
-	devpriv = dev->private;
 
-	s = &dev->subdevices[0];
+	s = dev->subdevices + 0;
 	s->type = COMEDI_SUBD_DIO;
 	s->subdev_flags = SDF_READABLE | SDF_WRITABLE;
 	s->n_chan = 8;
@@ -319,7 +329,7 @@ static int parport_attach(struct comedi_device *dev,
 	s->insn_bits = parport_insn_a;
 	s->insn_config = parport_insn_config_a;
 
-	s = &dev->subdevices[1];
+	s = dev->subdevices + 1;
 	s->type = COMEDI_SUBD_DI;
 	s->subdev_flags = SDF_READABLE;
 	s->n_chan = 5;
@@ -327,7 +337,7 @@ static int parport_attach(struct comedi_device *dev,
 	s->range_table = &range_digital;
 	s->insn_bits = parport_insn_b;
 
-	s = &dev->subdevices[2];
+	s = dev->subdevices + 2;
 	s->type = COMEDI_SUBD_DO;
 	s->subdev_flags = SDF_WRITABLE;
 	s->n_chan = 4;
@@ -335,7 +345,7 @@ static int parport_attach(struct comedi_device *dev,
 	s->range_table = &range_digital;
 	s->insn_bits = parport_insn_c;
 
-	s = &dev->subdevices[3];
+	s = dev->subdevices + 3;
 	if (irq) {
 		dev->read_subdev = s;
 		s->type = COMEDI_SUBD_DI;
@@ -356,10 +366,8 @@ static int parport_attach(struct comedi_device *dev,
 	devpriv->c_data = 0;
 	outb(devpriv->c_data, dev->iobase + PARPORT_C);
 
-	dev_info(dev->class_dev, "%s: iobase=0x%04lx, irq %sabled",
-		dev->board_name, dev->iobase, dev->irq ? "en" : "dis");
-
-	return 0;
+	printk(KERN_INFO "\n");
+	return 1;
 }
 
 static void parport_detach(struct comedi_device *dev)

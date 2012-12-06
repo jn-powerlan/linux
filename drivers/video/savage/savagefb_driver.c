@@ -2266,10 +2266,8 @@ static int __devinit savagefb_probe(struct pci_dev* dev,
 	lpitch = info->var.xres_virtual*((info->var.bits_per_pixel + 7) >> 3);
 	info->var.yres_virtual = info->fix.smem_len/lpitch;
 
-	if (info->var.yres_virtual < info->var.yres) {
-		err = -ENOMEM;
+	if (info->var.yres_virtual < info->var.yres)
 		goto failed;
-	}
 
 #if defined(CONFIG_FB_SAVAGE_ACCEL)
 	/*

@@ -33,7 +33,7 @@
  *		detection. The mods to Rev F required more family
  *		information detection.
  *
- *	Changes/Fixes by Borislav Petkov <bp@alien8.de>:
+ *	Changes/Fixes by Borislav Petkov <borislav.petkov@amd.com>:
  *		- misc fixes and code cleanups
  *
  * This module is based on the following documents

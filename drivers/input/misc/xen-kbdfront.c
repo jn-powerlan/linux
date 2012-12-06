@@ -311,6 +311,7 @@ static void xenkbd_backend_changed(struct xenbus_device *dev,
 	case XenbusStateReconfiguring:
 	case XenbusStateReconfigured:
 	case XenbusStateUnknown:
+	case XenbusStateClosed:
 		break;
 
 	case XenbusStateInitWait:
@@ -349,10 +350,6 @@ InitWait:
 
 		break;
 
-	case XenbusStateClosed:
-		if (dev->state == XenbusStateClosed)
-			break;
-		/* Missed the backend's CLOSING state -- fallthrough */
 	case XenbusStateClosing:
 		xenbus_frontend_closed(dev);
 		break;

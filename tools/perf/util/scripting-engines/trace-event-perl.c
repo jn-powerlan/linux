@@ -25,15 +25,15 @@
 #include <ctype.h>
 #include <errno.h>
 
-#include "../util.h"
-#include <EXTERN.h>
-#include <perl.h>
-
 #include "../../perf.h"
+#include "../util.h"
 #include "../thread.h"
 #include "../event.h"
 #include "../trace-event.h"
 #include "../evsel.h"
+
+#include <EXTERN.h>
+#include <perl.h>
 
 void boot_Perf__Trace__Context(pTHX_ CV *cv);
 void boot_DynaLoader(pTHX_ CV *cv);
@@ -237,16 +237,16 @@ static void define_event_symbols(struct event_format *event,
 		define_event_symbols(event, ev_name, args->next);
 }
 
-static inline struct event_format *find_cache_event(struct perf_evsel *evsel)
+static inline
+struct event_format *find_cache_event(struct pevent *pevent, int type)
 {
 	static char ev_name[256];
 	struct event_format *event;
-	int type = evsel->attr.config;
 
 	if (events[type])
 		return events[type];
 
-	events[type] = event = evsel->tp_format;
+	events[type] = event = pevent_find_event(pevent, type);
 	if (!event)
 		return NULL;
 
@@ -257,22 +257,23 @@ static inline struct event_format *find_cache_event(struct perf_evsel *evsel)
 	return event;
 }
 
-static void perl_process_tracepoint(union perf_event *perf_event __maybe_unused,
+static void perl_process_tracepoint(union perf_event *perf_event __unused,
+				    struct pevent *pevent,
 				    struct perf_sample *sample,
 				    struct perf_evsel *evsel,
-				    struct machine *machine __maybe_unused,
-				    struct addr_location *al)
+				    struct machine *machine __unused,
+				    struct thread *thread)
 {
 	struct format_field *field;
 	static char handler[256];
 	unsigned long long val;
 	unsigned long s, ns;
 	struct event_format *event;
+	int type;
 	int pid;
 	int cpu = sample->cpu;
 	void *data = sample->raw_data;
 	unsigned long long nsecs = sample->time;
-	struct thread *thread = al->thread;
 	char *comm = thread->comm;
 
 	dSP;
@@ -280,11 +281,13 @@ static void perl_process_tracepoint(union perf_event *perf_event __maybe_unused,
 	if (evsel->attr.type != PERF_TYPE_TRACEPOINT)
 		return;
 
-	event = find_cache_event(evsel);
-	if (!event)
-		die("ug! no event found for type %" PRIu64, evsel->attr.config);
+	type = trace_parse_common_type(pevent, data);
 
-	pid = raw_field_value(event, "common_pid", data);
+	event = find_cache_event(pevent, type);
+	if (!event)
+		die("ug! no event found for type %d", type);
+
+	pid = trace_parse_common_pid(pevent, data);
 
 	sprintf(handler, "%s::%s", event->system, event->name);
 
@@ -317,7 +320,7 @@ static void perl_process_tracepoint(union perf_event *perf_event __maybe_unused,
 				offset = field->offset;
 			XPUSHs(sv_2mortal(newSVpv((char *)data + offset, 0)));
 		} else { /* FIELD_IS_NUMERIC */
-			val = read_size(event, data + field->offset,
+			val = read_size(pevent, data + field->offset,
 					field->size);
 			if (field->flags & FIELD_IS_SIGNED) {
 				XPUSHs(sv_2mortal(newSViv(val)));
@@ -346,11 +349,11 @@ static void perl_process_tracepoint(union perf_event *perf_event __maybe_unused,
 	LEAVE;
 }
 
-static void perl_process_event_generic(union perf_event *event,
+static void perl_process_event_generic(union perf_event *pevent __unused,
 				       struct perf_sample *sample,
-				       struct perf_evsel *evsel,
-				       struct machine *machine __maybe_unused,
-				       struct addr_location *al __maybe_unused)
+				       struct perf_evsel *evsel __unused,
+				       struct machine *machine __unused,
+				       struct thread *thread __unused)
 {
 	dSP;
 
@@ -360,7 +363,7 @@ static void perl_process_event_generic(union perf_event *event,
 	ENTER;
 	SAVETMPS;
 	PUSHMARK(SP);
-	XPUSHs(sv_2mortal(newSVpvn((const char *)event, event->header.size)));
+	XPUSHs(sv_2mortal(newSVpvn((const char *)pevent, pevent->header.size)));
 	XPUSHs(sv_2mortal(newSVpvn((const char *)&evsel->attr, sizeof(evsel->attr))));
 	XPUSHs(sv_2mortal(newSVpvn((const char *)sample, sizeof(*sample))));
 	XPUSHs(sv_2mortal(newSVpvn((const char *)sample->raw_data, sample->raw_size)));
@@ -373,13 +376,14 @@ static void perl_process_event_generic(union perf_event *event,
 }
 
 static void perl_process_event(union perf_event *event,
+			       struct pevent *pevent,
 			       struct perf_sample *sample,
 			       struct perf_evsel *evsel,
 			       struct machine *machine,
-			       struct addr_location *al)
+			       struct thread *thread)
 {
-	perl_process_tracepoint(event, sample, evsel, machine, al);
-	perl_process_event_generic(event, sample, evsel, machine, al);
+	perl_process_tracepoint(event, pevent, sample, evsel, machine, thread);
+	perl_process_event_generic(event, sample, evsel, machine, thread);
 }
 
 static void run_start_sub(void)

@@ -348,8 +348,7 @@ static int __devinit cobalt_lcdfb_probe(struct platform_device *dev)
 	}
 
 	info->screen_size = resource_size(res);
-	info->screen_base = devm_ioremap(&dev->dev, res->start,
-					 info->screen_size);
+	info->screen_base = ioremap(res->start, info->screen_size);
 	info->fbops = &cobalt_lcd_fbops;
 	info->fix = cobalt_lcdfb_fix;
 	info->fix.smem_start = res->start;
@@ -360,6 +359,7 @@ static int __devinit cobalt_lcdfb_probe(struct platform_device *dev)
 
 	retval = register_framebuffer(info);
 	if (retval < 0) {
+		iounmap(info->screen_base);
 		framebuffer_release(info);
 		return retval;
 	}
@@ -380,6 +380,7 @@ static int __devexit cobalt_lcdfb_remove(struct platform_device *dev)
 
 	info = platform_get_drvdata(dev);
 	if (info) {
+		iounmap(info->screen_base);
 		unregister_framebuffer(info);
 		framebuffer_release(info);
 	}

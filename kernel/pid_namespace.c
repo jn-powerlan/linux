@@ -16,7 +16,6 @@
 #include <linux/slab.h>
 #include <linux/proc_fs.h>
 #include <linux/reboot.h>
-#include <linux/export.h>
 
 #define BITS_PER_PAGE		(PAGE_SIZE*8)
 
@@ -71,22 +70,12 @@ err_alloc:
 	return NULL;
 }
 
-/* MAX_PID_NS_LEVEL is needed for limiting size of 'struct pid' */
-#define MAX_PID_NS_LEVEL 32
-
 static struct pid_namespace *create_pid_namespace(struct pid_namespace *parent_pid_ns)
 {
 	struct pid_namespace *ns;
 	unsigned int level = parent_pid_ns->level + 1;
-	int i;
-	int err;
+	int i, err = -ENOMEM;
 
-	if (level > MAX_PID_NS_LEVEL) {
-		err = -EINVAL;
-		goto out;
-	}
-
-	err = -ENOMEM;
 	ns = kmem_cache_zalloc(pid_ns_cachep, GFP_KERNEL);
 	if (ns == NULL)
 		goto out;
@@ -143,26 +132,18 @@ struct pid_namespace *copy_pid_ns(unsigned long flags, struct pid_namespace *old
 	return create_pid_namespace(old_ns);
 }
 
-static void free_pid_ns(struct kref *kref)
+void free_pid_ns(struct kref *kref)
 {
-	struct pid_namespace *ns;
+	struct pid_namespace *ns, *parent;
 
 	ns = container_of(kref, struct pid_namespace, kref);
+
+	parent = ns->parent;
 	destroy_pid_namespace(ns);
-}
 
-void put_pid_ns(struct pid_namespace *ns)
-{
-	struct pid_namespace *parent;
-
-	while (ns != &init_pid_ns) {
-		parent = ns->parent;
-		if (!kref_put(&ns->kref, free_pid_ns))
-			break;
-		ns = parent;
-	}
+	if (parent != NULL)
+		put_pid_ns(parent);
 }
-EXPORT_SYMBOL_GPL(put_pid_ns);
 
 void zap_pid_ns_processes(struct pid_namespace *pid_ns)
 {

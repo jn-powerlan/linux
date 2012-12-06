@@ -1052,14 +1052,12 @@ static int __devinit mb862xx_pci_probe(struct pci_dev *pdev,
 		break;
 	default:
 		/* should never occur */
-		ret = -EIO;
 		goto rel_reg;
 	}
 
 	par->fb_base = ioremap(par->fb_base_phys, par->mapped_vram);
 	if (par->fb_base == NULL) {
 		dev_err(dev, "Cannot map framebuffer\n");
-		ret = -EIO;
 		goto rel_reg;
 	}
 
@@ -1075,13 +1073,11 @@ static int __devinit mb862xx_pci_probe(struct pci_dev *pdev,
 	dev_dbg(dev, "mmio phys 0x%llx 0x%lx\n",
 		(unsigned long long)par->mmio_base_phys, (ulong)par->mmio_len);
 
-	ret = mb862xx_pci_gdc_init(par);
-	if (ret)
+	if (mb862xx_pci_gdc_init(par))
 		goto io_unmap;
 
-	ret = request_irq(par->irq, mb862xx_intr, IRQF_SHARED,
-			  DRV_NAME, (void *)par);
-	if (ret) {
+	if (request_irq(par->irq, mb862xx_intr, IRQF_SHARED,
+			DRV_NAME, (void *)par)) {
 		dev_err(dev, "Cannot request irq\n");
 		goto io_unmap;
 	}

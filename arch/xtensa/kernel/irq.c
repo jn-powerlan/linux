@@ -72,30 +72,30 @@ int arch_show_interrupts(struct seq_file *p, int prec)
 static void xtensa_irq_mask(struct irq_data *d)
 {
 	cached_irq_mask &= ~(1 << d->irq);
-	set_sr (cached_irq_mask, intenable);
+	set_sr (cached_irq_mask, INTENABLE);
 }
 
 static void xtensa_irq_unmask(struct irq_data *d)
 {
 	cached_irq_mask |= 1 << d->irq;
-	set_sr (cached_irq_mask, intenable);
+	set_sr (cached_irq_mask, INTENABLE);
 }
 
 static void xtensa_irq_enable(struct irq_data *d)
 {
 	variant_irq_enable(d->irq);
-	xtensa_irq_unmask(d);
+	xtensa_irq_unmask(d->irq);
 }
 
 static void xtensa_irq_disable(struct irq_data *d)
 {
-	xtensa_irq_mask(d);
+	xtensa_irq_mask(d->irq);
 	variant_irq_disable(d->irq);
 }
 
 static void xtensa_irq_ack(struct irq_data *d)
 {
-	set_sr(1 << d->irq, intclear);
+	set_sr(1 << d->irq, INTCLEAR);
 }
 
 static int xtensa_irq_retrigger(struct irq_data *d)

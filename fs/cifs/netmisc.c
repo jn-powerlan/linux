@@ -110,7 +110,7 @@ static const struct smb_to_posix_error mapping_table_ERRSRV[] = {
 	{ERRnoroom, -ENOSPC},
 	{ERRrmuns, -EUSERS},
 	{ERRtimeout, -ETIME},
-	{ERRnoresource, -EREMOTEIO},
+	{ERRnoresource, -ENOBUFS},
 	{ERRtoomanyuids, -EUSERS},
 	{ERRbaduid, -EACCES},
 	{ERRusempx, -EIO},
@@ -412,7 +412,7 @@ static const struct {
 	 from NT_STATUS_INSUFFICIENT_RESOURCES to
 	 NT_STATUS_INSUFF_SERVER_RESOURCES during the session setup } */
 	{
-	ERRDOS, ERRnoresource, NT_STATUS_INSUFFICIENT_RESOURCES}, {
+	ERRDOS, ERRnomem, NT_STATUS_INSUFFICIENT_RESOURCES}, {
 	ERRDOS, ERRbadpath, NT_STATUS_DFS_EXIT_PATH_FOUND}, {
 	ERRDOS, 23, NT_STATUS_DEVICE_DATA_ERROR}, {
 	ERRHRD, ERRgeneral, NT_STATUS_DEVICE_NOT_CONNECTED}, {
@@ -682,7 +682,7 @@ static const struct {
 	ERRHRD, ERRgeneral, NT_STATUS_NO_USER_SESSION_KEY}, {
 	ERRDOS, 59, NT_STATUS_USER_SESSION_DELETED}, {
 	ERRHRD, ERRgeneral, NT_STATUS_RESOURCE_LANG_NOT_FOUND}, {
-	ERRDOS, ERRnoresource, NT_STATUS_INSUFF_SERVER_RESOURCES}, {
+	ERRDOS, ERRnomem, NT_STATUS_INSUFF_SERVER_RESOURCES}, {
 	ERRHRD, ERRgeneral, NT_STATUS_INVALID_BUFFER_SIZE}, {
 	ERRHRD, ERRgeneral, NT_STATUS_INVALID_ADDRESS_COMPONENT}, {
 	ERRHRD, ERRgeneral, NT_STATUS_INVALID_ADDRESS_WILDCARD}, {
@@ -913,9 +913,8 @@ map_smb_to_linux_error(char *buf, bool logErr)
  * portion, the number of word parameters and the data portion of the message
  */
 unsigned int
-smbCalcSize(void *buf)
+smbCalcSize(struct smb_hdr *ptr)
 {
-	struct smb_hdr *ptr = (struct smb_hdr *)buf;
 	return (sizeof(struct smb_hdr) + (2 * ptr->WordCount) +
 		2 /* size of the bcc field */ + get_bcc(ptr));
 }

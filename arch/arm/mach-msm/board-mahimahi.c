@@ -30,6 +30,7 @@
 
 #include <mach/board.h>
 #include <mach/hardware.h>
+#include <mach/system.h>
 
 #include "board-mahimahi.h"
 #include "devices.h"

@@ -19,7 +19,6 @@
 #include <linux/platform_device.h>
 #include <linux/irq.h>
 #include <linux/io.h>
-#include <linux/of.h>
 #include <linux/syscore_ops.h>
 #include <linux/i2c/pxa-i2c.h>
 
@@ -28,7 +27,7 @@
 #include <mach/hardware.h>
 #include <mach/pxa3xx-regs.h>
 #include <mach/reset.h>
-#include <linux/platform_data/usb-ohci-pxa27x.h>
+#include <mach/ohci.h>
 #include <mach/pm.h>
 #include <mach/dma.h>
 #include <mach/smemc.h>
@@ -40,8 +39,6 @@
 
 #define PECR_IE(n)	((1 << ((n) * 2)) << 28)
 #define PECR_IS(n)	((1 << ((n) * 2)) << 29)
-
-extern void __init pxa_dt_irq_init(int (*fn)(struct irq_data *, unsigned int));
 
 static DEFINE_PXA3_CKEN(pxa3xx_ffuart, FFUART, 14857000, 1);
 static DEFINE_PXA3_CKEN(pxa3xx_btuart, BTUART, 14857000, 1);
@@ -385,7 +382,7 @@ static void __init pxa_init_ext_wakeup_irq(int (*fn)(struct irq_data *,
 	pxa_ext_wakeup_chip.irq_set_wake = fn;
 }
 
-static void __init __pxa3xx_init_irq(void)
+void __init pxa3xx_init_irq(void)
 {
 	/* enable CP6 access */
 	u32 value;
@@ -393,22 +390,9 @@ static void __init __pxa3xx_init_irq(void)
 	value |= (1 << 6);
 	__asm__ __volatile__("mcr p15, 0, %0, c15, c1, 0\n": :"r"(value));
 
+	pxa_init_irq(56, pxa3xx_set_wake);
 	pxa_init_ext_wakeup_irq(pxa3xx_set_wake);
 }
-
-void __init pxa3xx_init_irq(void)
-{
-	__pxa3xx_init_irq();
-	pxa_init_irq(56, pxa3xx_set_wake);
-}
-
-#ifdef CONFIG_OF
-void __init pxa3xx_dt_init_irq(void)
-{
-	__pxa3xx_init_irq();
-	pxa_dt_irq_init(pxa3xx_set_wake);
-}
-#endif	/* CONFIG_OF */
 
 static struct map_desc pxa3xx_io_desc[] __initdata = {
 	{	/* Mem Ctl */
@@ -482,8 +466,7 @@ static int __init pxa3xx_init(void)
 		register_syscore_ops(&pxa3xx_mfp_syscore_ops);
 		register_syscore_ops(&pxa3xx_clock_syscore_ops);
 
-		if (!of_have_populated_dt())
-			ret = platform_add_devices(devices, ARRAY_SIZE(devices));
+		ret = platform_add_devices(devices, ARRAY_SIZE(devices));
 	}
 
 	return ret;

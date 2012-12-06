@@ -30,7 +30,6 @@
  * measurement, and debugging facilities.
  */
 
-#include <linux/irqflags.h>
 #include <asm/octeon/cvmx.h>
 #include <asm/octeon/cvmx-l2c.h>
 #include <asm/octeon/cvmx-spinlock.h>

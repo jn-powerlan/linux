@@ -138,7 +138,7 @@
 /*! [Begin] no source code translation */
 
 #if defined(_LINUX) || defined(__linux__)
-#include <acpi/platform/aclinux.h>
+#include "aclinux.h"
 
 #elif defined(_AED_EFI)
 #include "acefi.h"

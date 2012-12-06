@@ -40,7 +40,7 @@ static void iscsi_add_ts_to_active_list(struct iscsi_thread_set *ts)
 	spin_unlock(&active_ts_lock);
 }
 
-static void iscsi_add_ts_to_inactive_list(struct iscsi_thread_set *ts)
+extern void iscsi_add_ts_to_inactive_list(struct iscsi_thread_set *ts)
 {
 	spin_lock(&inactive_ts_lock);
 	list_add_tail(&ts->ts_list, &inactive_ts_list);
@@ -76,7 +76,7 @@ static struct iscsi_thread_set *iscsi_get_ts_from_inactive_list(void)
 	return ts;
 }
 
-int iscsi_allocate_thread_sets(u32 thread_pair_count)
+extern int iscsi_allocate_thread_sets(u32 thread_pair_count)
 {
 	int allocated_thread_pair_count = 0, i, thread_id;
 	struct iscsi_thread_set *ts = NULL;
@@ -140,7 +140,7 @@ int iscsi_allocate_thread_sets(u32 thread_pair_count)
 	return allocated_thread_pair_count;
 }
 
-void iscsi_deallocate_thread_sets(void)
+extern void iscsi_deallocate_thread_sets(void)
 {
 	u32 released_count = 0;
 	struct iscsi_thread_set *ts = NULL;

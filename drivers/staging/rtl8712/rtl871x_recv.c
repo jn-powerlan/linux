@@ -32,7 +32,6 @@
 #include <linux/slab.h>
 #include <linux/if_ether.h>
 #include <linux/kmemleak.h>
-#include <linux/etherdevice.h>
 
 #include "osdep_service.h"
 #include "drv_types.h"
@@ -332,8 +331,8 @@ static sint sta2sta_data_frame(struct _adapter *adapter,
 			return _FAIL;
 		if ((memcmp(myhwaddr, pattrib->dst, ETH_ALEN)) && (!bmcast))
 			return _FAIL;
-		if (is_zero_ether_addr(pattrib->bssid) ||
-		    is_zero_ether_addr(mybssid) ||
+		if (!memcmp(pattrib->bssid, "\x0\x0\x0\x0\x0\x0", ETH_ALEN) ||
+		    !memcmp(mybssid, "\x0\x0\x0\x0\x0\x0", ETH_ALEN) ||
 		    (memcmp(pattrib->bssid, mybssid, ETH_ALEN)))
 			return _FAIL;
 		sta_addr = pattrib->src;
@@ -410,8 +409,8 @@ static sint ap2sta_data_frame(struct _adapter *adapter,
 		if ((memcmp(myhwaddr, pattrib->dst, ETH_ALEN)) && (!bmcast))
 			return _FAIL;
 		/* check BSSID */
-		if (is_zero_ether_addr(pattrib->bssid) ||
-		     is_zero_ether_addr(mybssid) ||
+		if (!memcmp(pattrib->bssid, "\x0\x0\x0\x0\x0\x0", ETH_ALEN) ||
+		     !memcmp(mybssid, "\x0\x0\x0\x0\x0\x0", ETH_ALEN) ||
 		     (memcmp(pattrib->bssid, mybssid, ETH_ALEN)))
 			return _FAIL;
 		if (bmcast)

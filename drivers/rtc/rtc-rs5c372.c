@@ -104,12 +104,7 @@ static int rs5c_get_regs(struct rs5c372 *rs5c)
 {
 	struct i2c_client	*client = rs5c->client;
 	struct i2c_msg		msgs[] = {
-		{
-			.addr = client->addr,
-			.flags = I2C_M_RD,
-			.len = sizeof(rs5c->buf),
-			.buf = rs5c->buf
-		},
+		{ client->addr, I2C_M_RD, sizeof rs5c->buf, rs5c->buf },
 	};
 
 	/* This implements the third reading method from the datasheet, using

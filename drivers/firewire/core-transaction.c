@@ -31,7 +31,6 @@
 #include <linux/kernel.h>
 #include <linux/list.h>
 #include <linux/module.h>
-#include <linux/rculist.h>
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 #include <linux/string.h>
@@ -490,7 +489,7 @@ static struct fw_address_handler *lookup_overlapping_address_handler(
 {
 	struct fw_address_handler *handler;
 
-	list_for_each_entry_rcu(handler, list, link) {
+	list_for_each_entry(handler, list, link) {
 		if (handler->offset < offset + length &&
 		    offset < handler->offset + handler->length)
 			return handler;
@@ -511,7 +510,7 @@ static struct fw_address_handler *lookup_enclosing_address_handler(
 {
 	struct fw_address_handler *handler;
 
-	list_for_each_entry_rcu(handler, list, link) {
+	list_for_each_entry(handler, list, link) {
 		if (is_enclosing_handler(handler, offset, length))
 			return handler;
 	}
@@ -519,7 +518,7 @@ static struct fw_address_handler *lookup_enclosing_address_handler(
 	return NULL;
 }
 
-static DEFINE_SPINLOCK(address_handler_list_lock);
+static DEFINE_SPINLOCK(address_handler_lock);
 static LIST_HEAD(address_handler_list);
 
 const struct fw_address_region fw_high_memory_region =
@@ -556,7 +555,6 @@ static bool is_in_fcp_region(u64 offset, size_t length)
  * the specified callback is invoked.  The parameters passed to the callback
  * give the details of the particular request.
  *
- * To be called in process context.
  * Return value:  0 on success, non-zero otherwise.
  *
  * The start offset of the handler's address region is determined by
@@ -577,7 +575,7 @@ int fw_core_add_address_handler(struct fw_address_handler *handler,
 	    handler->length == 0)
 		return -EINVAL;
 
-	spin_lock(&address_handler_list_lock);
+	spin_lock_bh(&address_handler_lock);
 
 	handler->offset = region->start;
 	while (handler->offset + handler->length <= region->end) {
@@ -590,13 +588,13 @@ int fw_core_add_address_handler(struct fw_address_handler *handler,
 		if (other != NULL) {
 			handler->offset += other->length;
 		} else {
-			list_add_tail_rcu(&handler->link, &address_handler_list);
+			list_add_tail(&handler->link, &address_handler_list);
 			ret = 0;
 			break;
 		}
 	}
 
-	spin_unlock(&address_handler_list_lock);
+	spin_unlock_bh(&address_handler_lock);
 
 	return ret;
 }
@@ -605,17 +603,14 @@ EXPORT_SYMBOL(fw_core_add_address_handler);
 /**
  * fw_core_remove_address_handler() - unregister an address handler
  *
- * To be called in process context.
- *
  * When fw_core_remove_address_handler() returns, @handler->callback() is
  * guaranteed to not run on any CPU anymore.
  */
 void fw_core_remove_address_handler(struct fw_address_handler *handler)
 {
-	spin_lock(&address_handler_list_lock);
-	list_del_rcu(&handler->link);
-	spin_unlock(&address_handler_list_lock);
-	synchronize_rcu();
+	spin_lock_bh(&address_handler_lock);
+	list_del(&handler->link);
+	spin_unlock_bh(&address_handler_lock);
 }
 EXPORT_SYMBOL(fw_core_remove_address_handler);
 
@@ -849,7 +844,7 @@ static void handle_exclusive_region_request(struct fw_card *card,
 	if (tcode == TCODE_LOCK_REQUEST)
 		tcode = 0x10 + HEADER_GET_EXTENDED_TCODE(p->header[3]);
 
-	rcu_read_lock();
+	spin_lock_bh(&address_handler_lock);
 	handler = lookup_enclosing_address_handler(&address_handler_list,
 						   offset, request->length);
 	if (handler)
@@ -858,7 +853,7 @@ static void handle_exclusive_region_request(struct fw_card *card,
 					  p->generation, offset,
 					  request->data, request->length,
 					  handler->callback_data);
-	rcu_read_unlock();
+	spin_unlock_bh(&address_handler_lock);
 
 	if (!handler)
 		fw_send_response(card, request, RCODE_ADDRESS_ERROR);
@@ -891,8 +886,8 @@ static void handle_fcp_region_request(struct fw_card *card,
 		return;
 	}
 
-	rcu_read_lock();
-	list_for_each_entry_rcu(handler, &address_handler_list, link) {
+	spin_lock_bh(&address_handler_lock);
+	list_for_each_entry(handler, &address_handler_list, link) {
 		if (is_enclosing_handler(handler, offset, request->length))
 			handler->address_callback(card, NULL, tcode,
 						  destination, source,
@@ -901,7 +896,7 @@ static void handle_fcp_region_request(struct fw_card *card,
 						  request->length,
 						  handler->callback_data);
 	}
-	rcu_read_unlock();
+	spin_unlock_bh(&address_handler_lock);
 
 	fw_send_response(card, request, RCODE_COMPLETE);
 }

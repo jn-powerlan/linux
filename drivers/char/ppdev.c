@@ -783,8 +783,7 @@ static int __init ppdev_init (void)
 		err = PTR_ERR(ppdev_class);
 		goto out_chrdev;
 	}
-	err = parport_register_driver(&pp_driver);
-	if (err < 0) {
+	if (parport_register_driver(&pp_driver)) {
 		printk (KERN_WARNING CHRDEV ": unable to register with parport\n");
 		goto out_class;
 	}

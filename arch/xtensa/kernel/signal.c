@@ -19,6 +19,7 @@
 #include <linux/errno.h>
 #include <linux/ptrace.h>
 #include <linux/personality.h>
+#include <linux/freezer.h>
 #include <linux/tracehook.h>
 
 #include <asm/ucontext.h>
@@ -526,6 +527,9 @@ static void do_signal(struct pt_regs *regs)
 
 void do_notify_resume(struct pt_regs *regs)
 {
+	if (!user_mode(regs))
+		return;
+
 	if (test_thread_flag(TIF_SIGPENDING))
 		do_signal(regs);
 

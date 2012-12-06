@@ -3,8 +3,8 @@
 # include <asm-generic/xor.h>
 #else
 #ifdef CONFIG_X86_32
-# include <asm/xor_32.h>
+# include "xor_32.h"
 #else
-# include <asm/xor_64.h>
+# include "xor_64.h"
 #endif
 #endif

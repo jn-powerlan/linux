@@ -126,7 +126,7 @@ DATARATEbyGetRateIdx (
 /*+
  *
  * Routine Description:
- *      Rate fallback Algorithm Implementation
+ *      Rate fallback Algorithm Implementaion
  *
  * Parameters:
  *  In:

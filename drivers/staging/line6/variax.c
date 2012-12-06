@@ -353,10 +353,10 @@ static ssize_t variax_set_model(struct device *dev,
 {
 	struct usb_line6_variax *variax =
 	    usb_get_intfdata(to_usb_interface(dev));
-	u8 value;
+	unsigned long value;
 	int ret;
 
-	ret = kstrtou8(buf, 10, &value);
+	ret = strict_strtoul(buf, 10, &value);
 	if (ret)
 		return ret;
 
@@ -387,10 +387,10 @@ static ssize_t variax_set_active(struct device *dev,
 {
 	struct usb_line6_variax *variax =
 	    usb_get_intfdata(to_usb_interface(dev));
-	u8 value;
+	unsigned long value;
 	int ret;
 
-	ret = kstrtou8(buf, 10, &value);
+	ret = strict_strtoul(buf, 10, &value);
 	if (ret)
 		return ret;
 

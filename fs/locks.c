@@ -1289,7 +1289,7 @@ EXPORT_SYMBOL(__break_lease);
 void lease_get_mtime(struct inode *inode, struct timespec *time)
 {
 	struct file_lock *flock = inode->i_flock;
-	if (flock && IS_LEASE(flock) && (flock->fl_type == F_WRLCK))
+	if (flock && IS_LEASE(flock) && (flock->fl_type & F_WRLCK))
 		*time = current_fs_time(inode->i_sb);
 	else
 		*time = inode->i_mtime;
@@ -1625,13 +1625,15 @@ EXPORT_SYMBOL(flock_lock_file_wait);
  */
 SYSCALL_DEFINE2(flock, unsigned int, fd, unsigned int, cmd)
 {
-	struct fd f = fdget(fd);
+	struct file *filp;
+	int fput_needed;
 	struct file_lock *lock;
 	int can_sleep, unlock;
 	int error;
 
 	error = -EBADF;
-	if (!f.file)
+	filp = fget_light(fd, &fput_needed);
+	if (!filp)
 		goto out;
 
 	can_sleep = !(cmd & LOCK_NB);
@@ -1639,31 +1641,31 @@ SYSCALL_DEFINE2(flock, unsigned int, fd, unsigned int, cmd)
 	unlock = (cmd == LOCK_UN);
 
 	if (!unlock && !(cmd & LOCK_MAND) &&
-	    !(f.file->f_mode & (FMODE_READ|FMODE_WRITE)))
+	    !(filp->f_mode & (FMODE_READ|FMODE_WRITE)))
 		goto out_putf;
 
-	error = flock_make_lock(f.file, &lock, cmd);
+	error = flock_make_lock(filp, &lock, cmd);
 	if (error)
 		goto out_putf;
 	if (can_sleep)
 		lock->fl_flags |= FL_SLEEP;
 
-	error = security_file_lock(f.file, lock->fl_type);
+	error = security_file_lock(filp, lock->fl_type);
 	if (error)
 		goto out_free;
 
-	if (f.file->f_op && f.file->f_op->flock)
-		error = f.file->f_op->flock(f.file,
+	if (filp->f_op && filp->f_op->flock)
+		error = filp->f_op->flock(filp,
 					  (can_sleep) ? F_SETLKW : F_SETLK,
 					  lock);
 	else
-		error = flock_lock_file_wait(f.file, lock);
+		error = flock_lock_file_wait(filp, lock);
 
  out_free:
 	locks_free_lock(lock);
 
  out_putf:
-	fdput(f);
+	fput_light(filp, fput_needed);
  out:
 	return error;
 }
@@ -2185,8 +2187,8 @@ static void lock_get_status(struct seq_file *f, struct file_lock *fl,
 	} else {
 		seq_printf(f, "%s ",
 			       (lease_breaking(fl))
-			       ? (fl->fl_type == F_UNLCK) ? "UNLCK" : "READ "
-			       : (fl->fl_type == F_WRLCK) ? "WRITE" : "READ ");
+			       ? (fl->fl_type & F_UNLCK) ? "UNLCK" : "READ "
+			       : (fl->fl_type & F_WRLCK) ? "WRITE" : "READ ");
 	}
 	if (inode) {
 #ifdef WE_CAN_BREAK_LSLK_NOW

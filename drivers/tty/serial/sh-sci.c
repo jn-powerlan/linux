@@ -530,8 +530,7 @@ static inline int sci_rxd_in(struct uart_port *port)
 	if (s->cfg->port_reg <= 0)
 		return 1;
 
-	/* Cast for ARM damage */
-	return !!__raw_readb((void __iomem *)s->cfg->port_reg);
+	return !!__raw_readb(s->cfg->port_reg);
 }
 
 /* ********************************************************************** *

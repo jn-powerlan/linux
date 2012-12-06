@@ -186,7 +186,7 @@
 #define DRV_NAME "imx-ssi"
 
 #include <linux/dmaengine.h>
-#include <linux/platform_data/dma-imx.h>
+#include <mach/dma.h>
 #include "imx-pcm.h"
 
 struct imx_ssi {

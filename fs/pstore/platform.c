@@ -165,13 +165,7 @@ static void pstore_console_write(struct console *con, const char *s, unsigned c)
 
 		if (c > psinfo->bufsize)
 			c = psinfo->bufsize;
-
-		if (oops_in_progress) {
-			if (!spin_trylock_irqsave(&psinfo->buf_lock, flags))
-				break;
-		} else {
-			spin_lock_irqsave(&psinfo->buf_lock, flags);
-		}
+		spin_lock_irqsave(&psinfo->buf_lock, flags);
 		memcpy(psinfo->buf, s, c);
 		psinfo->write(PSTORE_TYPE_CONSOLE, 0, &id, 0, c, psinfo);
 		spin_unlock_irqrestore(&psinfo->buf_lock, flags);
@@ -243,7 +237,6 @@ int pstore_register(struct pstore_info *psi)
 
 	kmsg_dump_register(&pstore_dumper);
 	pstore_register_console();
-	pstore_register_ftrace();
 
 	if (pstore_update_ms >= 0) {
 		pstore_timer.expires = jiffies +

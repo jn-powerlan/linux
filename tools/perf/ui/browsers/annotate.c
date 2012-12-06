@@ -54,8 +54,7 @@ static inline struct browser_disasm_line *disasm_line__browser(struct disasm_lin
 	return (struct browser_disasm_line *)(dl + 1);
 }
 
-static bool disasm_line__filter(struct ui_browser *browser __maybe_unused,
-				void *entry)
+static bool disasm_line__filter(struct ui_browser *browser __used, void *entry)
 {
 	if (annotate_browser__opts.hide_src_code) {
 		struct disasm_line *dl = list_entry(entry, struct disasm_line, node);
@@ -929,8 +928,7 @@ static int annotate_config__cmp(const void *name, const void *cfgp)
 	return strcmp(name, cfg->name);
 }
 
-static int annotate__config(const char *var, const char *value,
-			    void *data __maybe_unused)
+static int annotate__config(const char *var, const char *value, void *data __used)
 {
 	struct annotate__config *cfg;
 	const char *name;

@@ -100,7 +100,7 @@ my @searchconfigs = (
 	},
 );
 
-sub read_config {
+sub find_config {
     foreach my $conf (@searchconfigs) {
 	my $file = $conf->{"file"};
 
@@ -115,15 +115,17 @@ sub read_config {
 
 	print STDERR "using config: '$file'\n";
 
-	open(my $infile, '-|', "$exec $file") || die "Failed to run $exec $file";
-	my @x = <$infile>;
-	close $infile;
-	return @x;
+	open(CIN, "$exec $file |") || die "Failed to run $exec $file";
+	return;
     }
     die "No config file found";
 }
 
-my @config_file = read_config;
+find_config;
+
+# Read in the entire config file into config_file
+my @config_file = <CIN>;
+close CIN;
 
 # Parse options
 my $localmodconfig = 0;
@@ -133,7 +135,7 @@ GetOptions("localmodconfig" => \$localmodconfig,
 	   "localyesconfig" => \$localyesconfig);
 
 # Get the build source and top level Kconfig file (passed in)
-my $ksource = ($ARGV[0] ? $ARGV[0] : '.');
+my $ksource = $ARGV[0];
 my $kconfig = $ARGV[1];
 my $lsmod_file = $ENV{'LSMOD'};
 
@@ -171,8 +173,8 @@ sub read_kconfig {
 	$source =~ s/\$$env/$ENV{$env}/;
     }
 
-    open(my $kinfile, '<', $source) || die "Can't open $kconfig";
-    while (<$kinfile>) {
+    open(KIN, "$source") || die "Can't open $kconfig";
+    while (<KIN>) {
 	chomp;
 
 	# Make sure that lines ending with \ continue
@@ -249,10 +251,10 @@ sub read_kconfig {
 	    $state = "NONE";
 	}
     }
-    close($kinfile);
+    close(KIN);
 
     # read in any configs that were found.
-    foreach my $kconfig (@kconfigs) {
+    foreach $kconfig (@kconfigs) {
 	if (!defined($read_kconfigs{$kconfig})) {
 	    $read_kconfigs{$kconfig} = 1;
 	    read_kconfig($kconfig);
@@ -293,8 +295,8 @@ foreach my $makefile (@makefiles) {
     my $line = "";
     my %make_vars;
 
-    open(my $infile, '<', $makefile) || die "Can't open $makefile";
-    while (<$infile>) {
+    open(MIN,$makefile) || die "Can't open $makefile";
+    while (<MIN>) {
 	# if this line ends with a backslash, continue
 	chomp;
 	if (/^(.*)\\$/) {
@@ -341,11 +343,10 @@ foreach my $makefile (@makefiles) {
 	    }
 	}
     }
-    close($infile);
+    close(MIN);
 }
 
 my %modules;
-my $linfile;
 
 if (defined($lsmod_file)) {
     if ( ! -f $lsmod_file) {
@@ -355,10 +356,13 @@ if (defined($lsmod_file)) {
 		die "$lsmod_file not found";
 	}
     }
-
-    my $otype = ( -x $lsmod_file) ? '-|' : '<';
-    open($linfile, $otype, $lsmod_file);
-
+    if ( -x $lsmod_file) {
+	# the file is executable, run it
+	open(LIN, "$lsmod_file|");
+    } else {
+	# Just read the contents
+	open(LIN, "$lsmod_file");
+    }
 } else {
 
     # see what modules are loaded on this system
@@ -375,16 +379,16 @@ if (defined($lsmod_file)) {
 	$lsmod = "lsmod";
     }
 
-    open($linfile, '-|', $lsmod) || die "Can not call lsmod with $lsmod";
+    open(LIN,"$lsmod|") || die "Can not call lsmod with $lsmod";
 }
 
-while (<$linfile>) {
+while (<LIN>) {
 	next if (/^Module/);  # Skip the first line.
 	if (/^(\S+)/) {
 		$modules{$1} = 1;
 	}
 }
-close ($linfile);
+close (LIN);
 
 # add to the configs hash all configs that are needed to enable
 # a loaded module. This is a direct obj-${CONFIG_FOO} += bar.o

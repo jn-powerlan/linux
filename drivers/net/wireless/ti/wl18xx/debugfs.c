@@ -220,7 +220,7 @@ static ssize_t clear_fw_stats_write(struct file *file,
 
 	mutex_lock(&wl->mutex);
 
-	if (unlikely(wl->state != WLCORE_STATE_ON))
+	if (wl->state == WL1271_STATE_OFF)
 		goto out;
 
 	ret = wl18xx_acx_clear_statistics(wl);

@@ -599,7 +599,6 @@ int omapfb_ioctl(struct fb_info *fbi, unsigned int cmd, unsigned long arg)
 	struct omapfb_info *ofbi = FB2OFB(fbi);
 	struct omapfb2_device *fbdev = ofbi->fbdev;
 	struct omap_dss_device *display = fb2display(fbi);
-	struct omap_overlay_manager *mgr;
 
 	union {
 		struct omapfb_update_window_old	uwnd_o;
@@ -787,14 +786,12 @@ int omapfb_ioctl(struct fb_info *fbi, unsigned int cmd, unsigned long arg)
 
 	case OMAPFB_WAITFORVSYNC:
 		DBG("ioctl WAITFORVSYNC\n");
-		if (!display || !display->output || !display->output->manager) {
+		if (!display) {
 			r = -EINVAL;
 			break;
 		}
 
-		mgr = display->output->manager;
-
-		r = mgr->wait_for_vsync(mgr);
+		r = display->manager->wait_for_vsync(display->manager);
 		break;
 
 	case OMAPFB_WAITFORGO:

@@ -723,7 +723,9 @@ int __cpuinit vdso_getcpu_init(void)
 
 	val = (cpu & 0xfff) | ((node & 0xffff) << 16);
 	mtspr(SPRN_SPRG3, val);
-	get_paca()->sprg3 = val;
+#ifdef CONFIG_KVM_BOOK3S_HANDLER
+	get_paca()->kvm_hstate.sprg3 = val;
+#endif
 
 	put_cpu();
 

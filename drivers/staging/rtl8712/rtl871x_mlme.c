@@ -28,8 +28,6 @@
 
 #define _RTL871X_MLME_C_
 
-#include <linux/etherdevice.h>
-
 #include "osdep_service.h"
 #include "drv_types.h"
 #include "recv_osdep.h"
@@ -148,8 +146,9 @@ static struct wlan_network *_r8712_find_network(struct  __queue *scanned_queue,
 	unsigned long irqL;
 	struct list_head *phead, *plist;
 	struct wlan_network *pnetwork = NULL;
+	u8 zero_addr[ETH_ALEN] = {0, 0, 0, 0, 0, 0};
 
-	if (is_zero_ether_addr(addr))
+	if (!memcmp(zero_addr, addr, ETH_ALEN))
 		return NULL;
 	spin_lock_irqsave(&scanned_queue->lock, irqL);
 	phead = get_list_head(scanned_queue);

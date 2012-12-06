@@ -1621,7 +1621,24 @@ static struct i2c_driver tlv320dac33_i2c_driver = {
 	.id_table	= tlv320dac33_i2c_id,
 };
 
-module_i2c_driver(tlv320dac33_i2c_driver);
+static int __init dac33_module_init(void)
+{
+	int r;
+	r = i2c_add_driver(&tlv320dac33_i2c_driver);
+	if (r < 0) {
+		printk(KERN_ERR "DAC33: driver registration failed\n");
+		return r;
+	}
+	return 0;
+}
+module_init(dac33_module_init);
+
+static void __exit dac33_module_exit(void)
+{
+	i2c_del_driver(&tlv320dac33_i2c_driver);
+}
+module_exit(dac33_module_exit);
+
 
 MODULE_DESCRIPTION("ASoC TLV320DAC33 codec driver");
 MODULE_AUTHOR("Peter Ujfalusi <peter.ujfalusi@ti.com>");

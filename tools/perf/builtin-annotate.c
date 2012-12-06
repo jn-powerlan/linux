@@ -239,7 +239,7 @@ static const char * const annotate_usage[] = {
 	NULL
 };
 
-int cmd_annotate(int argc, const char **argv, const char *prefix __maybe_unused)
+int cmd_annotate(int argc, const char **argv, const char *prefix __used)
 {
 	struct perf_annotate annotate = {
 		.tool = {
@@ -282,8 +282,6 @@ int cmd_annotate(int argc, const char **argv, const char *prefix __maybe_unused)
 		    "Display raw encoding of assembly instructions (default)"),
 	OPT_STRING('M', "disassembler-style", &disassembler_style, "disassembler style",
 		   "Specify disassembler style (e.g. -M intel for intel syntax)"),
-	OPT_STRING(0, "objdump", &objdump_path, "path",
-		   "objdump binary to use for disassembly and annotations"),
 	OPT_END()
 	};
 

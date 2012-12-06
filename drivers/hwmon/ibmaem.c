@@ -36,7 +36,6 @@
 #include <linux/platform_device.h>
 #include <linux/math64.h>
 #include <linux/time.h>
-#include <linux/err.h>
 
 #define REFRESH_INTERVAL	(HZ)
 #define IPMI_TIMEOUT		(30 * HZ)

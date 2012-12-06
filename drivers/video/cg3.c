@@ -398,8 +398,7 @@ static int __devinit cg3_probe(struct platform_device *op)
 			goto out_unmap_screen;
 	}
 
-	err = fb_alloc_cmap(&info->cmap, 256, 0);
-	if (err)
+	if (fb_alloc_cmap(&info->cmap, 256, 0))
 		goto out_unmap_screen;
 
 	fb_set_cmap(&info->cmap, info);

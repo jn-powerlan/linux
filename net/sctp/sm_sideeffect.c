@@ -251,7 +251,6 @@ void sctp_generate_t3_rtx_event(unsigned long peer)
 	int error;
 	struct sctp_transport *transport = (struct sctp_transport *) peer;
 	struct sctp_association *asoc = transport->asoc;
-	struct net *net = sock_net(asoc->base.sk);
 
 	/* Check whether a task is in the sock.  */
 
@@ -272,7 +271,7 @@ void sctp_generate_t3_rtx_event(unsigned long peer)
 		goto out_unlock;
 
 	/* Run through the state machine.  */
-	error = sctp_do_sm(net, SCTP_EVENT_T_TIMEOUT,
+	error = sctp_do_sm(SCTP_EVENT_T_TIMEOUT,
 			   SCTP_ST_TIMEOUT(SCTP_EVENT_TIMEOUT_T3_RTX),
 			   asoc->state,
 			   asoc->ep, asoc,
@@ -292,7 +291,6 @@ out_unlock:
 static void sctp_generate_timeout_event(struct sctp_association *asoc,
 					sctp_event_timeout_t timeout_type)
 {
-	struct net *net = sock_net(asoc->base.sk);
 	int error = 0;
 
 	sctp_bh_lock_sock(asoc->base.sk);
@@ -314,7 +312,7 @@ static void sctp_generate_timeout_event(struct sctp_association *asoc,
 		goto out_unlock;
 
 	/* Run through the state machine.  */
-	error = sctp_do_sm(net, SCTP_EVENT_T_TIMEOUT,
+	error = sctp_do_sm(SCTP_EVENT_T_TIMEOUT,
 			   SCTP_ST_TIMEOUT(timeout_type),
 			   asoc->state, asoc->ep, asoc,
 			   (void *)timeout_type, GFP_ATOMIC);
@@ -373,7 +371,6 @@ void sctp_generate_heartbeat_event(unsigned long data)
 	int error = 0;
 	struct sctp_transport *transport = (struct sctp_transport *) data;
 	struct sctp_association *asoc = transport->asoc;
-	struct net *net = sock_net(asoc->base.sk);
 
 	sctp_bh_lock_sock(asoc->base.sk);
 	if (sock_owned_by_user(asoc->base.sk)) {
@@ -391,7 +388,7 @@ void sctp_generate_heartbeat_event(unsigned long data)
 	if (transport->dead)
 		goto out_unlock;
 
-	error = sctp_do_sm(net, SCTP_EVENT_T_TIMEOUT,
+	error = sctp_do_sm(SCTP_EVENT_T_TIMEOUT,
 			   SCTP_ST_TIMEOUT(SCTP_EVENT_TIMEOUT_HEARTBEAT),
 			   asoc->state, asoc->ep, asoc,
 			   transport, GFP_ATOMIC);
@@ -411,7 +408,6 @@ void sctp_generate_proto_unreach_event(unsigned long data)
 {
 	struct sctp_transport *transport = (struct sctp_transport *) data;
 	struct sctp_association *asoc = transport->asoc;
-	struct net *net = sock_net(asoc->base.sk);
 	
 	sctp_bh_lock_sock(asoc->base.sk);
 	if (sock_owned_by_user(asoc->base.sk)) {
@@ -430,7 +426,7 @@ void sctp_generate_proto_unreach_event(unsigned long data)
 	if (asoc->base.dead)
 		goto out_unlock;
 
-	sctp_do_sm(net, SCTP_EVENT_T_OTHER,
+	sctp_do_sm(SCTP_EVENT_T_OTHER,
 		   SCTP_ST_OTHER(SCTP_EVENT_ICMP_PROTO_UNREACH),
 		   asoc->state, asoc->ep, asoc, transport, GFP_ATOMIC);
 
@@ -752,15 +748,13 @@ static void sctp_cmd_transport_on(sctp_cmd_seq_t *cmds,
 /* Helper function to process the process SACK command.  */
 static int sctp_cmd_process_sack(sctp_cmd_seq_t *cmds,
 				 struct sctp_association *asoc,
-				 struct sctp_chunk *chunk)
+				 struct sctp_sackhdr *sackh)
 {
 	int err = 0;
 
-	if (sctp_outq_sack(&asoc->outqueue, chunk)) {
-		struct net *net = sock_net(asoc->base.sk);
-
+	if (sctp_outq_sack(&asoc->outqueue, sackh)) {
 		/* There are no more TSNs awaiting SACK.  */
-		err = sctp_do_sm(net, SCTP_EVENT_T_OTHER,
+		err = sctp_do_sm(SCTP_EVENT_T_OTHER,
 				 SCTP_ST_OTHER(SCTP_EVENT_NO_PENDING_TSN),
 				 asoc->state, asoc->ep, asoc, NULL,
 				 GFP_ATOMIC);
@@ -1048,8 +1042,6 @@ static int sctp_cmd_send_msg(struct sctp_association *asoc,
  */
 static void sctp_cmd_send_asconf(struct sctp_association *asoc)
 {
-	struct net *net = sock_net(asoc->base.sk);
-
 	/* Send the next asconf chunk from the addip chunk
 	 * queue.
 	 */
@@ -1061,7 +1053,7 @@ static void sctp_cmd_send_asconf(struct sctp_association *asoc)
 
 		/* Hold the chunk until an ASCONF_ACK is received. */
 		sctp_chunk_hold(asconf);
-		if (sctp_primitive_ASCONF(net, asoc, asconf))
+		if (sctp_primitive_ASCONF(asoc, asconf))
 			sctp_chunk_free(asconf);
 		else
 			asoc->addip_last_asconf = asconf;
@@ -1097,7 +1089,7 @@ static void sctp_cmd_send_asconf(struct sctp_association *asoc)
  * If you want to understand all of lksctp, this is a
  * good place to start.
  */
-int sctp_do_sm(struct net *net, sctp_event_t event_type, sctp_subtype_t subtype,
+int sctp_do_sm(sctp_event_t event_type, sctp_subtype_t subtype,
 	       sctp_state_t state,
 	       struct sctp_endpoint *ep,
 	       struct sctp_association *asoc,
@@ -1118,12 +1110,12 @@ int sctp_do_sm(struct net *net, sctp_event_t event_type, sctp_subtype_t subtype,
 	/* Look up the state function, run it, and then process the
 	 * side effects.  These three steps are the heart of lksctp.
 	 */
-	state_fn = sctp_sm_lookup_event(net, event_type, state, subtype);
+	state_fn = sctp_sm_lookup_event(event_type, state, subtype);
 
 	sctp_init_cmd_seq(&commands);
 
 	DEBUG_PRE;
-	status = (*state_fn->fn)(net, ep, asoc, subtype, event_arg, &commands);
+	status = (*state_fn->fn)(ep, asoc, subtype, event_arg, &commands);
 	DEBUG_POST;
 
 	error = sctp_side_effects(event_type, subtype, state,

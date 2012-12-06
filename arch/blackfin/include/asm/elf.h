@@ -132,7 +132,6 @@ do {											\
 
 #define ELF_PLATFORM  (NULL)
 
-#define SET_PERSONALITY(ex) \
-	set_personality(PER_LINUX | (current->personality & (~PER_MASK)))
+#define SET_PERSONALITY(ex) set_personality(PER_LINUX)
 
 #endif

@@ -21,7 +21,6 @@
 #include <linux/seq_file.h>
 #include <linux/uaccess.h>
 #include <linux/mfd/core.h>
-#include <linux/mfd/ab3100.h>
 #include <linux/mfd/abx500.h>
 
 /* These are the only registers inside AB3100 used in this main file */

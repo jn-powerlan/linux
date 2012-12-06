@@ -16,7 +16,7 @@
  * WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  */
 
-#include <linux/platform_data/dsp-omap.h>
+#include <plat/dsp.h>
 
 #include <linux/types.h>
 #include <linux/platform_device.h>
@@ -261,7 +261,7 @@ static int bridge_mmap(struct file *filp, struct vm_area_struct *vma)
 {
 	u32 status;
 
-	/* VM_IO | VM_DONTEXPAND | VM_DONTDUMP are set by remap_pfn_range() */
+	vma->vm_flags |= VM_RESERVED | VM_IO;
 	vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
 
 	dev_dbg(bridge, "%s: vm filp %p start %lx end %lx page_prot %ulx "
@@ -613,6 +613,16 @@ static struct platform_driver bridge_driver = {
 #endif
 };
 
+static int __init bridge_init(void)
+{
+	return platform_driver_register(&bridge_driver);
+}
+
+static void __exit bridge_exit(void)
+{
+	platform_driver_unregister(&bridge_driver);
+}
+
 /* To remove all process resources before removing the process from the
  * process context list */
 int drv_remove_all_resources(void *process_ctxt)
@@ -626,4 +636,6 @@ int drv_remove_all_resources(void *process_ctxt)
 	return status;
 }
 
-module_platform_driver(bridge_driver);
+/* Bridge driver initialization and de-initialization functions */
+module_init(bridge_init);
+module_exit(bridge_exit);

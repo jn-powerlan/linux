@@ -403,7 +403,7 @@ BOOL KeybRemoveKey(
     BOOL    bReturnValue = FALSE;
 
     if (is_broadcast_ether_addr(pbyBSSID)) {
-        // delete all keys
+        // dealte all key
         if ((dwKeyIndex & PAIRWISE_KEY) != 0) {
             for (i=0;i<MAX_KEY_TABLE;i++) {
                 pTable->KeyTable[i].PairwiseKey.bKeyValid = FALSE;
@@ -618,7 +618,7 @@ BOOL KeybGetTransmitKey(PSKeyManagement pTable, PBYTE pbyBSSID, DWORD dwKeyType,
 
 
 /*
- * Description: Check Pairwise Key
+ * Description: Check Pairewise Key
  *
  * Parameters:
  *  In:

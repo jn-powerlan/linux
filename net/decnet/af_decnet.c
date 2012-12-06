@@ -1313,10 +1313,10 @@ static int dn_shutdown(struct socket *sock, int how)
 	if (scp->state == DN_O)
 		goto out;
 
-	if (how != SHUT_RDWR)
+	if (how != SHUTDOWN_MASK)
 		goto out;
 
-	sk->sk_shutdown = SHUTDOWN_MASK;
+	sk->sk_shutdown = how;
 	dn_destroy_sock(sk);
 	err = 0;
 

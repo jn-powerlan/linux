@@ -36,10 +36,10 @@
 #include <asm/mach/flash.h>
 
 #include <mach/common.h>
-#include <linux/platform_data/i2c-davinci.h>
+#include <mach/i2c.h>
 #include <mach/serial.h>
 #include <mach/mux.h>
-#include <linux/platform_data/usb-davinci.h>
+#include <mach/usb.h>
 
 #include "davinci.h"
 

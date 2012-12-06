@@ -177,7 +177,7 @@ static double do_memcpy_gettimeofday(memcpy_t fn, size_t len, bool prefault)
 	} while (0)
 
 int bench_mem_memcpy(int argc, const char **argv,
-		     const char *prefix __maybe_unused)
+		     const char *prefix __used)
 {
 	int i;
 	size_t len;

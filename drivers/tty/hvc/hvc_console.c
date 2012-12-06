@@ -245,20 +245,6 @@ static void hvc_port_destruct(struct tty_port *port)
 	kfree(hp);
 }
 
-static void hvc_check_console(int index)
-{
-	/* Already enabled, bail out */
-	if (hvc_console.flags & CON_ENABLED)
-		return;
-
- 	/* If this index is what the user requested, then register
-	 * now (setup won't fail at this point).  It's ok to just
-	 * call register again if previously .setup failed.
-	 */
-	if (index == hvc_console.index)
-		register_console(&hvc_console);
-}
-
 /*
  * hvc_instantiate() is an early console discovery method which locates
  * consoles * prior to the vio subsystem discovering them.  Hotplugged
@@ -289,8 +275,12 @@ int hvc_instantiate(uint32_t vtermno, int index, const struct hv_ops *ops)
 	if (last_hvc < index)
 		last_hvc = index;
 
-	/* check if we need to re-register the kernel console */
-	hvc_check_console(index);
+	/* if this index is what the user requested, then register
+	 * now (setup won't fail at this point).  It's ok to just
+	 * call register again if previously .setup failed.
+	 */
+	if (index == hvc_console.index)
+		register_console(&hvc_console);
 
 	return 0;
 }
@@ -309,32 +299,19 @@ static void hvc_unthrottle(struct tty_struct *tty)
 	hvc_kick();
 }
 
-static int hvc_install(struct tty_driver *driver, struct tty_struct *tty)
-{
-	struct hvc_struct *hp;
-	int rc;
-
-	/* Auto increments kref reference if found. */
-	if (!(hp = hvc_get_by_index(tty->index)))
-		return -ENODEV;
-
-	tty->driver_data = hp;
-
-	rc = tty_port_install(&hp->port, driver, tty);
-	if (rc)
-		tty_port_put(&hp->port);
-	return rc;
-}
-
 /*
  * The TTY interface won't be used until after the vio layer has exposed the vty
  * adapter to the kernel.
  */
 static int hvc_open(struct tty_struct *tty, struct file * filp)
 {
-	struct hvc_struct *hp = tty->driver_data;
+	struct hvc_struct *hp;
 	unsigned long flags;
 	int rc = 0;
+
+	/* Auto increments kref reference if found. */
+	if (!(hp = hvc_get_by_index(tty->index)))
+		return -ENODEV;
 
 	spin_lock_irqsave(&hp->port.lock, flags);
 	/* Check and then increment for fast path open. */
@@ -345,6 +322,7 @@ static int hvc_open(struct tty_struct *tty, struct file * filp)
 	} /* else count == 0 */
 	spin_unlock_irqrestore(&hp->port.lock, flags);
 
+	tty->driver_data = hp;
 	tty_port_tty_set(&hp->port, tty);
 
 	if (hp->ops->notifier_add)
@@ -411,11 +389,6 @@ static void hvc_close(struct tty_struct *tty, struct file * filp)
 				hp->vtermno, hp->port.count);
 		spin_unlock_irqrestore(&hp->port.lock, flags);
 	}
-}
-
-static void hvc_cleanup(struct tty_struct *tty)
-{
-	struct hvc_struct *hp = tty->driver_data;
 
 	tty_port_put(&hp->port);
 }
@@ -424,6 +397,7 @@ static void hvc_hangup(struct tty_struct *tty)
 {
 	struct hvc_struct *hp = tty->driver_data;
 	unsigned long flags;
+	int temp_open_count;
 
 	if (!hp)
 		return;
@@ -443,6 +417,7 @@ static void hvc_hangup(struct tty_struct *tty)
 		return;
 	}
 
+	temp_open_count = hp->port.count;
 	hp->port.count = 0;
 	spin_unlock_irqrestore(&hp->port.lock, flags);
 	tty_port_tty_set(&hp->port, NULL);
@@ -451,6 +426,11 @@ static void hvc_hangup(struct tty_struct *tty)
 
 	if (hp->ops->notifier_hangup)
 		hp->ops->notifier_hangup(hp, hp->data);
+
+	while(temp_open_count) {
+		--temp_open_count;
+		tty_port_put(&hp->port);
+	}
 }
 
 /*
@@ -561,7 +541,7 @@ static int hvc_write_room(struct tty_struct *tty)
 	struct hvc_struct *hp = tty->driver_data;
 
 	if (!hp)
-		return 0;
+		return -1;
 
 	return hp->outbuf_size - hp->n_outbuf;
 }
@@ -812,10 +792,8 @@ static void hvc_poll_put_char(struct tty_driver *driver, int line, char ch)
 #endif
 
 static const struct tty_operations hvc_ops = {
-	.install = hvc_install,
 	.open = hvc_open,
 	.close = hvc_close,
-	.cleanup = hvc_cleanup,
 	.write = hvc_write,
 	.hangup = hvc_hangup,
 	.unthrottle = hvc_unthrottle,
@@ -880,14 +858,9 @@ struct hvc_struct *hvc_alloc(uint32_t vtermno, int data,
 		i = ++last_hvc;
 
 	hp->index = i;
-	cons_ops[i] = ops;
-	vtermnos[i] = vtermno;
 
 	list_add_tail(&(hp->next), &hvc_structs);
 	spin_unlock(&hvc_structs_lock);
-
-	/* check if we need to re-register the kernel console */
-	hvc_check_console(i);
 
 	return hp;
 }
@@ -901,12 +874,8 @@ int hvc_remove(struct hvc_struct *hp)
 	tty = tty_port_tty_get(&hp->port);
 
 	spin_lock_irqsave(&hp->lock, flags);
-	if (hp->index < MAX_NR_HVC_CONSOLES) {
-		console_lock();
+	if (hp->index < MAX_NR_HVC_CONSOLES)
 		vtermnos[hp->index] = -1;
-		cons_ops[hp->index] = NULL;
-		console_unlock();
-	}
 
 	/* Don't whack hp->irq because tty_hangup() will need to free the irq. */
 

@@ -55,7 +55,7 @@ static __le16 ieee80211_duration(struct ieee80211_tx_data *tx,
 	if (WARN_ON_ONCE(info->control.rates[0].idx < 0))
 		return 0;
 
-	sband = local->hw.wiphy->bands[info->band];
+	sband = local->hw.wiphy->bands[tx->channel->band];
 	txrate = &sband->bitrates[info->control.rates[0].idx];
 
 	erp = txrate->flags & IEEE80211_RATE_ERP_G;
@@ -580,7 +580,7 @@ ieee80211_tx_h_select_key(struct ieee80211_tx_data *tx)
 				tx->key = NULL;
 			else
 				skip_hw = (tx->key->conf.flags &
-					   IEEE80211_KEY_FLAG_SW_MGMT_TX) &&
+					   IEEE80211_KEY_FLAG_SW_MGMT) &&
 					ieee80211_is_mgmt(hdr->frame_control);
 			break;
 		case WLAN_CIPHER_SUITE_AES_CMAC:
@@ -615,7 +615,7 @@ ieee80211_tx_h_rate_ctrl(struct ieee80211_tx_data *tx)
 
 	memset(&txrc, 0, sizeof(txrc));
 
-	sband = tx->local->hw.wiphy->bands[info->band];
+	sband = tx->local->hw.wiphy->bands[tx->channel->band];
 
 	len = min_t(u32, tx->skb->len + FCS_LEN,
 			 tx->local->hw.wiphy->frag_threshold);
@@ -626,13 +626,13 @@ ieee80211_tx_h_rate_ctrl(struct ieee80211_tx_data *tx)
 	txrc.bss_conf = &tx->sdata->vif.bss_conf;
 	txrc.skb = tx->skb;
 	txrc.reported_rate.idx = -1;
-	txrc.rate_idx_mask = tx->sdata->rc_rateidx_mask[info->band];
+	txrc.rate_idx_mask = tx->sdata->rc_rateidx_mask[tx->channel->band];
 	if (txrc.rate_idx_mask == (1 << sband->n_bitrates) - 1)
 		txrc.max_rate_idx = -1;
 	else
 		txrc.max_rate_idx = fls(txrc.rate_idx_mask) - 1;
 	memcpy(txrc.rate_idx_mcs_mask,
-	       tx->sdata->rc_rateidx_mcs_mask[info->band],
+	       tx->sdata->rc_rateidx_mcs_mask[tx->channel->band],
 	       sizeof(txrc.rate_idx_mcs_mask));
 	txrc.bss = (tx->sdata->vif.type == NL80211_IFTYPE_AP ||
 		    tx->sdata->vif.type == NL80211_IFTYPE_MESH_POINT ||
@@ -667,7 +667,7 @@ ieee80211_tx_h_rate_ctrl(struct ieee80211_tx_data *tx)
 		 "scanning and associated. Target station: "
 		 "%pM on %d GHz band\n",
 		 tx->sdata->name, hdr->addr1,
-		 info->band ? 5 : 2))
+		 tx->channel->band ? 5 : 2))
 		return TX_DROP;
 
 	/*
@@ -1131,6 +1131,7 @@ ieee80211_tx_prepare(struct ieee80211_sub_if_data *sdata,
 	tx->skb = skb;
 	tx->local = local;
 	tx->sdata = sdata;
+	tx->channel = local->hw.conf.channel;
 	__skb_queue_head_init(&tx->skbs);
 
 	/*
@@ -1203,7 +1204,6 @@ static bool ieee80211_tx_frags(struct ieee80211_local *local,
 			       struct sk_buff_head *skbs,
 			       bool txpending)
 {
-	struct ieee80211_tx_control control;
 	struct sk_buff *skb, *tmp;
 	unsigned long flags;
 
@@ -1240,10 +1240,10 @@ static bool ieee80211_tx_frags(struct ieee80211_local *local,
 		spin_unlock_irqrestore(&local->queue_stop_reason_lock, flags);
 
 		info->control.vif = vif;
-		control.sta = sta;
+		info->control.sta = sta;
 
 		__skb_unlink(skb, skbs);
-		drv_tx(local, &control, skb);
+		drv_tx(local, skb);
 	}
 
 	return true;
@@ -1399,7 +1399,8 @@ static bool ieee80211_tx(struct ieee80211_sub_if_data *sdata,
 		goto out;
 	}
 
-	info->band = local->hw.conf.channel->band;
+	tx.channel = local->hw.conf.channel;
+	info->band = tx.channel->band;
 
 	/* set up hw_queue value early */
 	if (!(info->flags & IEEE80211_TX_CTL_TX_OFFCHAN) ||
@@ -1719,7 +1720,7 @@ netdev_tx_t ieee80211_subif_start_xmit(struct sk_buff *skb,
 	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
 	struct ieee80211_local *local = sdata->local;
 	struct ieee80211_tx_info *info;
-	int head_need;
+	int ret = NETDEV_TX_BUSY, head_need;
 	u16 ethertype, hdrlen,  meshhdrlen = 0;
 	__le16 fc;
 	struct ieee80211_hdr hdr;
@@ -1735,8 +1736,10 @@ netdev_tx_t ieee80211_subif_start_xmit(struct sk_buff *skb,
 	u32 info_flags = 0;
 	u16 info_id = 0;
 
-	if (unlikely(skb->len < ETH_HLEN))
+	if (unlikely(skb->len < ETH_HLEN)) {
+		ret = NETDEV_TX_OK;
 		goto fail;
+	}
 
 	/* convert Ethernet header to proper 802.11 header (based on
 	 * operation mode) */
@@ -1784,6 +1787,7 @@ netdev_tx_t ieee80211_subif_start_xmit(struct sk_buff *skb,
 		if (!sdata->u.mesh.mshcfg.dot11MeshTTL) {
 			/* Do not send frames with mesh_ttl == 0 */
 			sdata->u.mesh.mshstats.dropped_frames_ttl++;
+			ret = NETDEV_TX_OK;
 			goto fail;
 		}
 		rcu_read_lock();
@@ -1870,8 +1874,10 @@ netdev_tx_t ieee80211_subif_start_xmit(struct sk_buff *skb,
 
 		if (tdls_direct) {
 			/* link during setup - throw out frames to peer */
-			if (!tdls_auth)
+			if (!tdls_auth) {
+				ret = NETDEV_TX_OK;
 				goto fail;
+			}
 
 			/* DA SA BSSID */
 			memcpy(hdr.addr1, skb->data, ETH_ALEN);
@@ -1905,6 +1911,7 @@ netdev_tx_t ieee80211_subif_start_xmit(struct sk_buff *skb,
 		hdrlen = 24;
 		break;
 	default:
+		ret = NETDEV_TX_OK;
 		goto fail;
 	}
 
@@ -1949,6 +1956,7 @@ netdev_tx_t ieee80211_subif_start_xmit(struct sk_buff *skb,
 
 		I802_DEBUG_INC(local->tx_handlers_drop_unauth_port);
 
+		ret = NETDEV_TX_OK;
 		goto fail;
 	}
 
@@ -2003,8 +2011,10 @@ netdev_tx_t ieee80211_subif_start_xmit(struct sk_buff *skb,
 		skb = skb_clone(skb, GFP_ATOMIC);
 		kfree_skb(tmp_skb);
 
-		if (!skb)
+		if (!skb) {
+			ret = NETDEV_TX_OK;
 			goto fail;
+		}
 	}
 
 	hdr.frame_control = fc;
@@ -2109,8 +2119,10 @@ netdev_tx_t ieee80211_subif_start_xmit(struct sk_buff *skb,
 	return NETDEV_TX_OK;
 
  fail:
-	dev_kfree_skb(skb);
-	return NETDEV_TX_OK;
+	if (ret == NETDEV_TX_OK)
+		dev_kfree_skb(skb);
+
+	return ret;
 }
 
 
@@ -2288,8 +2300,11 @@ struct sk_buff *ieee80211_beacon_get_tim(struct ieee80211_hw *hw,
 	struct ieee80211_sub_if_data *sdata = NULL;
 	struct ieee80211_if_ap *ap = NULL;
 	struct beacon_data *beacon;
-	enum ieee80211_band band = local->oper_channel->band;
+	struct ieee80211_supported_band *sband;
+	enum ieee80211_band band = local->hw.conf.channel->band;
 	struct ieee80211_tx_rate_control txrc;
+
+	sband = local->hw.wiphy->bands[band];
 
 	rcu_read_lock();
 
@@ -2400,7 +2415,7 @@ struct sk_buff *ieee80211_beacon_get_tim(struct ieee80211_hw *hw,
 		memset(mgmt, 0, hdr_len);
 		mgmt->frame_control =
 		    cpu_to_le16(IEEE80211_FTYPE_MGMT | IEEE80211_STYPE_BEACON);
-		eth_broadcast_addr(mgmt->da);
+		memset(mgmt->da, 0xff, ETH_ALEN);
 		memcpy(mgmt->sa, sdata->vif.addr, ETH_ALEN);
 		memcpy(mgmt->bssid, sdata->vif.addr, ETH_ALEN);
 		mgmt->u.beacon.beacon_int =
@@ -2412,9 +2427,9 @@ struct sk_buff *ieee80211_beacon_get_tim(struct ieee80211_hw *hw,
 		*pos++ = WLAN_EID_SSID;
 		*pos++ = 0x0;
 
-		if (ieee80211_add_srates_ie(sdata, skb, true, band) ||
+		if (ieee80211_add_srates_ie(sdata, skb, true) ||
 		    mesh_add_ds_params_ie(skb, sdata) ||
-		    ieee80211_add_ext_srates_ie(sdata, skb, true, band) ||
+		    ieee80211_add_ext_srates_ie(sdata, skb, true) ||
 		    mesh_add_rsn_ie(skb, sdata) ||
 		    mesh_add_ht_cap_ie(skb, sdata) ||
 		    mesh_add_ht_oper_ie(skb, sdata) ||
@@ -2437,12 +2452,12 @@ struct sk_buff *ieee80211_beacon_get_tim(struct ieee80211_hw *hw,
 
 	memset(&txrc, 0, sizeof(txrc));
 	txrc.hw = hw;
-	txrc.sband = local->hw.wiphy->bands[band];
+	txrc.sband = sband;
 	txrc.bss_conf = &sdata->vif.bss_conf;
 	txrc.skb = skb;
 	txrc.reported_rate.idx = -1;
 	txrc.rate_idx_mask = sdata->rc_rateidx_mask[band];
-	if (txrc.rate_idx_mask == (1 << txrc.sband->n_bitrates) - 1)
+	if (txrc.rate_idx_mask == (1 << sband->n_bitrates) - 1)
 		txrc.max_rate_idx = -1;
 	else
 		txrc.max_rate_idx = fls(txrc.rate_idx_mask) - 1;
@@ -2466,8 +2481,7 @@ struct sk_buff *ieee80211_proberesp_get(struct ieee80211_hw *hw,
 					struct ieee80211_vif *vif)
 {
 	struct ieee80211_if_ap *ap = NULL;
-	struct sk_buff *skb = NULL;
-	struct probe_resp *presp = NULL;
+	struct sk_buff *presp = NULL, *skb = NULL;
 	struct ieee80211_hdr *hdr;
 	struct ieee80211_sub_if_data *sdata = vif_to_sdata(vif);
 
@@ -2481,11 +2495,9 @@ struct sk_buff *ieee80211_proberesp_get(struct ieee80211_hw *hw,
 	if (!presp)
 		goto out;
 
-	skb = dev_alloc_skb(presp->len);
+	skb = skb_copy(presp, GFP_ATOMIC);
 	if (!skb)
 		goto out;
-
-	memcpy(skb_put(skb, presp->len), presp->data, presp->len);
 
 	hdr = (struct ieee80211_hdr *) skb->data;
 	memset(hdr->addr1, 0, sizeof(hdr->addr1));
@@ -2597,9 +2609,9 @@ struct sk_buff *ieee80211_probereq_get(struct ieee80211_hw *hw,
 	memset(hdr, 0, sizeof(*hdr));
 	hdr->frame_control = cpu_to_le16(IEEE80211_FTYPE_MGMT |
 					 IEEE80211_STYPE_PROBE_REQ);
-	eth_broadcast_addr(hdr->addr1);
+	memset(hdr->addr1, 0xff, ETH_ALEN);
 	memcpy(hdr->addr2, vif->addr, ETH_ALEN);
-	eth_broadcast_addr(hdr->addr3);
+	memset(hdr->addr3, 0xff, ETH_ALEN);
 
 	pos = skb_put(skb, ie_ssid_len);
 	*pos++ = WLAN_EID_SSID;
@@ -2696,7 +2708,8 @@ ieee80211_get_buffered_bc(struct ieee80211_hw *hw,
 	info = IEEE80211_SKB_CB(skb);
 
 	tx.flags |= IEEE80211_TX_PS_BUFFERED;
-	info->band = local->oper_channel->band;
+	tx.channel = local->hw.conf.channel;
+	info->band = tx.channel->band;
 
 	if (invoke_tx_handlers(&tx))
 		skb = NULL;

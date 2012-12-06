@@ -47,7 +47,9 @@ static const struct platform_suspend_ops highbank_pm_ops = {
 	.valid = suspend_valid_only_mem,
 };
 
-void __init highbank_pm_init(void)
+static int __init highbank_pm_init(void)
 {
 	suspend_set_ops(&highbank_pm_ops);
+	return 0;
 }
+module_init(highbank_pm_init);

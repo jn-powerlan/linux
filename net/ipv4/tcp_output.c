@@ -702,8 +702,7 @@ static unsigned int tcp_synack_options(struct sock *sk,
 				   unsigned int mss, struct sk_buff *skb,
 				   struct tcp_out_options *opts,
 				   struct tcp_md5sig_key **md5,
-				   struct tcp_extend_values *xvp,
-				   struct tcp_fastopen_cookie *foc)
+				   struct tcp_extend_values *xvp)
 {
 	struct inet_request_sock *ireq = inet_rsk(req);
 	unsigned int remaining = MAX_TCP_OPTION_SPACE;
@@ -748,15 +747,7 @@ static unsigned int tcp_synack_options(struct sock *sk,
 		if (unlikely(!ireq->tstamp_ok))
 			remaining -= TCPOLEN_SACKPERM_ALIGNED;
 	}
-	if (foc != NULL) {
-		u32 need = TCPOLEN_EXP_FASTOPEN_BASE + foc->len;
-		need = (need + 3) & ~3U;  /* Align to 32 bits */
-		if (remaining >= need) {
-			opts->options |= OPTION_FAST_OPEN_COOKIE;
-			opts->fastopen_cookie = foc;
-			remaining -= need;
-		}
-	}
+
 	/* Similar rationale to tcp_syn_options() applies here, too.
 	 * If the <SYN> options fit, the same options should fit now!
 	 */
@@ -2041,10 +2032,10 @@ repair:
 		if (push_one)
 			break;
 	}
+	if (inet_csk(sk)->icsk_ca_state == TCP_CA_Recovery)
+		tp->prr_out += sent_pkts;
 
 	if (likely(sent_pkts)) {
-		if (tcp_in_cwnd_reduction(sk))
-			tp->prr_out += sent_pkts;
 		tcp_cwnd_validate(sk);
 		return false;
 	}
@@ -2546,7 +2537,7 @@ begin_fwd:
 		}
 		NET_INC_STATS_BH(sock_net(sk), mib_idx);
 
-		if (tcp_in_cwnd_reduction(sk))
+		if (inet_csk(sk)->icsk_ca_state == TCP_CA_Recovery)
 			tp->prr_out += tcp_skb_pcount(skb);
 
 		if (skb == tcp_write_queue_head(sk))
@@ -2671,8 +2662,7 @@ int tcp_send_synack(struct sock *sk)
  */
 struct sk_buff *tcp_make_synack(struct sock *sk, struct dst_entry *dst,
 				struct request_sock *req,
-				struct request_values *rvp,
-				struct tcp_fastopen_cookie *foc)
+				struct request_values *rvp)
 {
 	struct tcp_out_options opts;
 	struct tcp_extend_values *xvp = tcp_xv(rvp);
@@ -2732,7 +2722,7 @@ struct sk_buff *tcp_make_synack(struct sock *sk, struct dst_entry *dst,
 #endif
 	TCP_SKB_CB(skb)->when = tcp_time_stamp;
 	tcp_header_size = tcp_synack_options(sk, req, mss,
-					     skb, &opts, &md5, xvp, foc)
+					     skb, &opts, &md5, xvp)
 			+ sizeof(*th);
 
 	skb_push(skb, tcp_header_size);
@@ -2786,8 +2776,7 @@ struct sk_buff *tcp_make_synack(struct sock *sk, struct dst_entry *dst,
 	}
 
 	th->seq = htonl(TCP_SKB_CB(skb)->seq);
-	/* XXX data is queued and acked as is. No buffer/window check */
-	th->ack_seq = htonl(tcp_rsk(req)->rcv_nxt);
+	th->ack_seq = htonl(tcp_rsk(req)->rcv_isn + 1);
 
 	/* RFC1323: The window in SYN & SYN/ACK segments is never scaled. */
 	th->window = htons(min(req->rcv_wnd, 65535U));

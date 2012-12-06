@@ -27,10 +27,18 @@
 #include <linux/mmc/card.h>
 #include <linux/clk.h>
 #include <linux/scatterlist.h>
+#include <linux/i2c/tps65010.h>
 #include <linux/slab.h>
 
+#include <asm/io.h>
+#include <asm/irq.h>
+
+#include <plat/board.h>
 #include <plat/mmc.h>
+#include <asm/gpio.h>
 #include <plat/dma.h>
+#include <plat/mux.h>
+#include <plat/fpga.h>
 
 #define	OMAP_MMC_REG_CMD	0x00
 #define	OMAP_MMC_REG_ARGL	0x01
@@ -99,6 +107,7 @@ struct mmc_omap_slot {
 	u16			saved_con;
 	u16			bus_mode;
 	unsigned int		fclk_freq;
+	unsigned		powered:1;
 
 	struct tasklet_struct	cover_tasklet;
 	struct timer_list       cover_timer;
@@ -130,6 +139,7 @@ struct mmc_omap_host {
 	unsigned int		phys_base;
 	int			irq;
 	unsigned char		bus_mode;
+	unsigned char		hw_bus_mode;
 	unsigned int		reg_shift;
 
 	struct work_struct	cmd_abort_work;
@@ -687,29 +697,22 @@ mmc_omap_xfer_data(struct mmc_omap_host *host, int write)
 	host->buffer += nwords;
 }
 
-#ifdef CONFIG_MMC_DEBUG
-static void mmc_omap_report_irq(struct mmc_omap_host *host, u16 status)
+static inline void mmc_omap_report_irq(u16 status)
 {
 	static const char *mmc_omap_status_bits[] = {
 		"EOC", "CD", "CB", "BRS", "EOFB", "DTO", "DCRC", "CTO",
 		"CCRC", "CRW", "AF", "AE", "OCRB", "CIRQ", "CERR"
 	};
-	int i;
-	char res[64], *buf = res;
-
-	buf += sprintf(buf, "MMC IRQ 0x%x:", status);
+	int i, c = 0;
 
 	for (i = 0; i < ARRAY_SIZE(mmc_omap_status_bits); i++)
-		if (status & (1 << i))
-			buf += sprintf(buf, " %s", mmc_omap_status_bits[i]);
-	dev_vdbg(mmc_dev(host->mmc), "%s\n", res);
+		if (status & (1 << i)) {
+			if (c)
+				printk(" ");
+			printk("%s", mmc_omap_status_bits[i]);
+			c++;
+		}
 }
-#else
-static void mmc_omap_report_irq(struct mmc_omap_host *host, u16 status)
-{
-}
-#endif
-
 
 static irqreturn_t mmc_omap_irq(int irq, void *dev_id)
 {
@@ -743,10 +746,12 @@ static irqreturn_t mmc_omap_irq(int irq, void *dev_id)
 			cmd = host->cmd->opcode;
 		else
 			cmd = -1;
+#ifdef CONFIG_MMC_DEBUG
 		dev_dbg(mmc_dev(host->mmc), "MMC IRQ %04x (CMD %d): ",
 			status, cmd);
-		mmc_omap_report_irq(host, status);
-
+		mmc_omap_report_irq(status);
+		printk("\n");
+#endif
 		if (host->total_bytes_left) {
 			if ((status & OMAP_MMC_STAT_A_FULL) ||
 			    (status & OMAP_MMC_STAT_END_OF_DATA))

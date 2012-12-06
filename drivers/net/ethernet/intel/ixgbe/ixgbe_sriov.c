@@ -346,10 +346,6 @@ void ixgbe_restore_vf_multicasts(struct ixgbe_adapter *adapter)
 static int ixgbe_set_vf_vlan(struct ixgbe_adapter *adapter, int add, int vid,
 			     u32 vf)
 {
-	/* VLAN 0 is a special case, don't allow it to be removed */
-	if (!vid && !add)
-		return 0;
-
 	return adapter->hw.mac.ops.set_vfta(&adapter->hw, vid, vf, (bool)add);
 }
 
@@ -418,7 +414,6 @@ static inline void ixgbe_vf_reset_event(struct ixgbe_adapter *adapter, u32 vf)
 				  VLAN_PRIO_SHIFT)), vf);
 		ixgbe_set_vmolr(hw, vf, false);
 	} else {
-		ixgbe_set_vf_vlan(adapter, true, 0, vf);
 		ixgbe_set_vmvir(adapter, 0, vf);
 		ixgbe_set_vmolr(hw, vf, true);
 	}
@@ -815,9 +810,9 @@ out:
        return err;
 }
 
-static int ixgbe_link_mbps(struct ixgbe_adapter *adapter)
+static int ixgbe_link_mbps(int internal_link_speed)
 {
-	switch (adapter->link_speed) {
+	switch (internal_link_speed) {
 	case IXGBE_LINK_SPEED_100_FULL:
 		return 100;
 	case IXGBE_LINK_SPEED_1GB_FULL:
@@ -829,30 +824,27 @@ static int ixgbe_link_mbps(struct ixgbe_adapter *adapter)
 	}
 }
 
-static void ixgbe_set_vf_rate_limit(struct ixgbe_adapter *adapter, int vf)
+static void ixgbe_set_vf_rate_limit(struct ixgbe_hw *hw, int vf, int tx_rate,
+				    int link_speed)
 {
-	struct ixgbe_ring_feature *vmdq = &adapter->ring_feature[RING_F_VMDQ];
-	struct ixgbe_hw *hw = &adapter->hw;
-	u32 bcnrc_val = 0;
-	u16 queue, queues_per_pool;
-	u16 tx_rate = adapter->vfinfo[vf].tx_rate;
+	int rf_dec, rf_int;
+	u32 bcnrc_val;
 
-	if (tx_rate) {
-		/* start with base link speed value */
-		bcnrc_val = adapter->vf_rate_link_speed;
-
+	if (tx_rate != 0) {
 		/* Calculate the rate factor values to set */
-		bcnrc_val <<= IXGBE_RTTBCNRC_RF_INT_SHIFT;
-		bcnrc_val /= tx_rate;
+		rf_int = link_speed / tx_rate;
+		rf_dec = (link_speed - (rf_int * tx_rate));
+		rf_dec = (rf_dec * (1<<IXGBE_RTTBCNRC_RF_INT_SHIFT)) / tx_rate;
 
-		/* clear everything but the rate factor */
-		bcnrc_val &= IXGBE_RTTBCNRC_RF_INT_MASK |
-			     IXGBE_RTTBCNRC_RF_DEC_MASK;
-
-		/* enable the rate scheduler */
-		bcnrc_val |= IXGBE_RTTBCNRC_RS_ENA;
+		bcnrc_val = IXGBE_RTTBCNRC_RS_ENA;
+		bcnrc_val |= ((rf_int<<IXGBE_RTTBCNRC_RF_INT_SHIFT) &
+		               IXGBE_RTTBCNRC_RF_INT_MASK);
+		bcnrc_val |= (rf_dec & IXGBE_RTTBCNRC_RF_DEC_MASK);
+	} else {
+		bcnrc_val = 0;
 	}
 
+	IXGBE_WRITE_REG(hw, IXGBE_RTTDQSEL, 2*vf); /* vf Y uses queue 2*Y */
 	/*
 	 * Set global transmit compensation time to the MMW_SIZE in RTTBCNRM
 	 * register. Typically MMW_SIZE=0x014 if 9728-byte jumbo is supported
@@ -869,68 +861,53 @@ static void ixgbe_set_vf_rate_limit(struct ixgbe_adapter *adapter, int vf)
 		break;
 	}
 
-	/* determine how many queues per pool based on VMDq mask */
-	queues_per_pool = __ALIGN_MASK(1, ~vmdq->mask);
-
-	/* write value for all Tx queues belonging to VF */
-	for (queue = 0; queue < queues_per_pool; queue++) {
-		unsigned int reg_idx = (vf * queues_per_pool) + queue;
-
-		IXGBE_WRITE_REG(hw, IXGBE_RTTDQSEL, reg_idx);
-		IXGBE_WRITE_REG(hw, IXGBE_RTTBCNRC, bcnrc_val);
-	}
+	IXGBE_WRITE_REG(hw, IXGBE_RTTBCNRC, bcnrc_val);
 }
 
 void ixgbe_check_vf_rate_limit(struct ixgbe_adapter *adapter)
 {
-	int i;
+	int actual_link_speed, i;
+	bool reset_rate = false;
 
 	/* VF Tx rate limit was not set */
-	if (!adapter->vf_rate_link_speed)
+	if (adapter->vf_rate_link_speed == 0)
 		return;
 
-	if (ixgbe_link_mbps(adapter) != adapter->vf_rate_link_speed) {
+	actual_link_speed = ixgbe_link_mbps(adapter->link_speed);
+	if (actual_link_speed != adapter->vf_rate_link_speed) {
+		reset_rate = true;
 		adapter->vf_rate_link_speed = 0;
 		dev_info(&adapter->pdev->dev,
-			 "Link speed has been changed. VF Transmit rate is disabled\n");
+		         "Link speed has been changed. VF Transmit rate "
+		         "is disabled\n");
 	}
 
 	for (i = 0; i < adapter->num_vfs; i++) {
-		if (!adapter->vf_rate_link_speed)
+		if (reset_rate)
 			adapter->vfinfo[i].tx_rate = 0;
 
-		ixgbe_set_vf_rate_limit(adapter, i);
+		ixgbe_set_vf_rate_limit(&adapter->hw, i,
+					adapter->vfinfo[i].tx_rate,
+					actual_link_speed);
 	}
 }
 
 int ixgbe_ndo_set_vf_bw(struct net_device *netdev, int vf, int tx_rate)
 {
 	struct ixgbe_adapter *adapter = netdev_priv(netdev);
-	int link_speed;
+	struct ixgbe_hw *hw = &adapter->hw;
+	int actual_link_speed;
 
-	/* verify VF is active */
-	if (vf >= adapter->num_vfs)
+	actual_link_speed = ixgbe_link_mbps(adapter->link_speed);
+	if ((vf >= adapter->num_vfs) || (!adapter->link_up) ||
+	    (tx_rate > actual_link_speed) || (actual_link_speed != 10000) ||
+	    ((tx_rate != 0) && (tx_rate <= 10)))
+	    /* rate limit cannot be set to 10Mb or less in 10Gb adapters */
 		return -EINVAL;
 
-	/* verify link is up */
-	if (!adapter->link_up)
-		return -EINVAL;
-
-	/* verify we are linked at 10Gbps */
-	link_speed = ixgbe_link_mbps(adapter);
-	if (link_speed != 10000)
-		return -EINVAL;
-
-	/* rate limit cannot be less than 10Mbs or greater than link speed */
-	if (tx_rate && ((tx_rate <= 10) || (tx_rate > link_speed)))
-		return -EINVAL;
-
-	/* store values */
-	adapter->vf_rate_link_speed = link_speed;
-	adapter->vfinfo[vf].tx_rate = tx_rate;
-
-	/* update hardware configuration */
-	ixgbe_set_vf_rate_limit(adapter, vf);
+	adapter->vf_rate_link_speed = actual_link_speed;
+	adapter->vfinfo[vf].tx_rate = (u16)tx_rate;
+	ixgbe_set_vf_rate_limit(hw, vf, tx_rate, actual_link_speed);
 
 	return 0;
 }

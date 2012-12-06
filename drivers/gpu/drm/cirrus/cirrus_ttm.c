@@ -25,7 +25,7 @@
 /*
  * Authors: Dave Airlie <airlied@redhat.com>
  */
-#include <drm/drmP.h>
+#include "drmP.h"
 #include "cirrus_drv.h"
 #include <ttm/ttm_page_alloc.h>
 
